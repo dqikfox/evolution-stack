@@ -293,6 +293,32 @@ CHARACTER_MODELS = {
 }
 ```
 
+**The keys are internal IDs, not the character's public name.** They are often
+legacy names deliberately kept for backwards compatibility, and the matching
+model tag inherits that internal spelling — a model tag that looks retired is
+usually this layer, not a defect.
+
+When a character is renamed in the product, keep an alias map and apply it
+BEFORE both the persona lookup and the model lookup. If you skip the model
+lookup, the new name falls through to the default model and the character
+quietly answers in someone else's voice:
+
+```python
+PERSONA_ALIASES = {"luna": "lila", "sprout": "pip"}   # public name -> internal ID
+
+def load_persona(name):
+    name = PERSONA_ALIASES.get(name.lower(), name.lower())
+    ...
+
+def model_for(name):
+    name = PERSONA_ALIASES.get(name.lower(), name.lower())
+    return CHARACTER_MODELS.get(name, DEFAULT_MODEL)
+```
+
+Before renaming a model or a persona file, check for an alias map. If one
+exists, the public name already resolves and the internal spelling is
+intentional.
+
 See **[references/character-model-patterns.md](references/character-model-patterns.md)** for a complete working example including engine.py integration and frontend wiring.
 
 ## Parameter reference
