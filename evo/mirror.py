@@ -85,7 +85,7 @@ def record_all() -> list[str]:
     """
     REFUSED.clear()
     out = []
-    for root in (paths.SKILLS_DIR, paths.SCRIPTS_DIR):
+    for root in (paths.SKILLS_DIR, paths.SCRIPTS_DIR, paths.HERETIK_DIR):
         if not root.exists():
             continue
         for p in root.rglob("*"):
@@ -93,6 +93,8 @@ def record_all() -> list[str]:
                 continue
             if any(x in p.parts for x in ("__pycache__", ".venv", "node_modules")):
                 continue
+            if p.suffix in (".pyc", ".pyd", ".so", ".dll", ".exe"):
+                continue      # compiled artefacts are not source
             try:
                 rel = p.relative_to(paths.HERMES).as_posix()
             except ValueError:

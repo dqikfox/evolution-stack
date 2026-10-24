@@ -14,6 +14,10 @@ ARCHIVE_DB = STATE / "archive.db"
 # --- the improvable surface: what the stack is allowed to change -------------
 SKILLS_DIR = HERMES / "skills"
 SCRIPTS_DIR = HERMES / "scripts"
+# HERETIK owns its own directory (the demand proxy and its launcher).
+# It is part of the improvable surface: a change to the proxy is a change
+# to the stack, and it must be versioned like everything else.
+HERETIK_DIR = HERMES / "heretik"
 CONFIG_YAML = HERMES / "config.yaml"
 CRON_JOBS = HERMES / "cron" / "jobs.json"
 MEMORY_MD = HERMES / "memories" / "MEMORY.md"
