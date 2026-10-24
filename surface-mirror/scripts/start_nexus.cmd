@@ -14,6 +14,10 @@ REM
 REM Usage:  start_nexus.cmd
 REM ---------------------------------------------------------------------------
 setlocal
+REM Clear the agent's import path: a service must use its own
+REM venv's packages, not the site-packages of whatever launched it.
+set PYTHONPATH=
+set PYTHONHOME=
 
 set NEXUS_VENV=C:\Users\KING\.cache\nexus-venv\Scripts\python.exe
 set NEXUS_RUNNER=E:\ultron-memory\nexus-core\run_nexus.py

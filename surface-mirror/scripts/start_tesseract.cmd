@@ -16,6 +16,10 @@ REM
 REM Usage:  start_tesseract.cmd
 REM ---------------------------------------------------------------------------
 setlocal
+REM Clear the agent's import path: a service must use its own
+REM venv's packages, not the site-packages of whatever launched it.
+set PYTHONPATH=
+set PYTHONHOME=
 
 set TESS_PROJECT=C:\Users\KING\Projects\TESSERACT
 set TESS_PY=%TESS_PROJECT%\.venv\Scripts\python.exe
@@ -35,9 +39,13 @@ if not exist "%TESS_PY%" (
 )
 if not exist "%LOCALAPPDATA%\hermes\logs" mkdir "%LOCALAPPDATA%\hermes\logs" 2>nul
 
-echo [tesseract] starting (log: %TESS_LOG%)...
+echo [tesseract] starting (server log: %TESS_LOG%)...
 cd /d "%TESS_PROJECT%"
-start "TESSERACT" /min "%TESS_PY%" "%TESS_PROJECT%\start.py" >> "%TESS_LOG%" 2>&1
+REM `start` (not `start /b`) so the server gets its own console and survives
+REM the launcher exiting - a /b child dies with the console it shares.
+REM `start` ignores a redirect applied to it, which is fine: start.py does the
+REM redirecting itself, one level below the 1Password CLI, into the log file.
+start "TESSERACT" /min "%TESS_PY%" "%TESS_PROJECT%\start.py"
 
 echo [tesseract] waiting for :%TESS_PORT%...
 set /a tries=0
