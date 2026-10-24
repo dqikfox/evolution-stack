@@ -192,6 +192,22 @@ defects found and the fixes, is in
   session never sees EOF, stays "running" forever, and replays its stale buffer
   as endless heartbeats. `close_fds=True` is required on EVERY spawn in the
   chain, not just the last one.
+- **A cron job whose work a script can do should BE a script** — the hourly
+  `Nexus_Core_Sync` was model-driven; on two of five runs the model degenerated
+  into a repetition loop and the run was recorded as a FAILED job, while the
+  actual condition was "MSI offline" (an expected external state, not a defect).
+  The work was a file listing plus a front-matter parse: deterministic work with
+  a deterministic exit code. Rewrite the job as `script` + `no_agent`, have the
+  script own the data, and let the model report the exit code. A model in the
+  path adds three failure modes (loops, forgotten preflight, wrong channel).
+- **A health observation must not travel through the job-failure channel** — the
+  5-minute Ollama beat exited 1 whenever the host was busy, so a loaded machine
+  produced a failed job every 5 minutes and buried the failures that matter. A
+  probe's exit code must mean "did the probe do its job"; load state is DATA
+  (`degraded`, `reasons`), judged separately on a TRANSITION. Alert on an
+  episode (sustained pressure) and on its recovery — never per sample. Put the
+  episode in the operator's existing feed (a TESSERACT alert row) rather than
+  opening a second channel nobody watches.
 - **Report the delta, not the vibe** — "gate 84.62 → 76.92, rejected, rolled back"
   beats "made it better".
 - **Network awareness** — never ignore the relationship between this host (THRONE) and
