@@ -19,6 +19,7 @@ evo/snapshot.py       snapshot / restore / diff of the improvable surface
 evo/mutate.py         Ollama proposer + proposal safety validator
 evo/learn.py          the learning bridge: lessons + cron failures + archive -> proposer prompt
 evo/mirror.py         copies accepted surface changes into the repo (git-tracked history)
+evo/services.py       registry-driven service health + autonomous healing
 evo/consolidation.py  inventory + KEEP/MERGE/RETIRE/REPAIR/DUPLICATE audit
 evo/loop.py           single CLI entry point
 tests/test_gate.py    end-to-end proof of both gate paths
@@ -41,11 +42,33 @@ python -m evo propose          # ask the local model for one change (records a v
 python -m evo apply <id>       # snapshot -> apply -> bench -> keep OR auto-rollback
 python -m evo rollback <snap>  # manual restore
 python -m evo mirror --all     # mirror the surface into this repo
+python -m evo services          # registry-driven service survey
+python -m evo services --heal   # restart anything down that has a start path
 python -m evo history          # variant + benchmark history
-python -m evo cycle            # cron-safe: scout + LEARN + bench + status file
+python -m evo cycle            # cron-safe: scout + LEARN + HEAL + bench + status file
 ```
 
 `python -m evo bench` exit code is non-zero while gate-actionable failures remain.
+
+## The service registry (E:\ultron-memory\infra\SERVICES.json)
+
+The registry is what turned "dead service" into "recovered service". Each entry
+carries a start path, a health URL and a status:
+
+| status | meaning | loop behaviour |
+|---|---|---|
+| `up` | listening and healthy | scored, no action |
+| `down` + start path | service died | **gate-actionable** — the cycle restarts it before scoring |
+| `down`, no start path | nothing to run | host score only (operator action) |
+| `retired` | no implementation exists | not checked, never counted as a failure |
+
+`evo cycle` runs `services.survey(auto_heal=True)` before benchmarking, so a
+service that dies between cycles is back up before the score is taken. The
+registry and `PORT_MAP.json` must stay in sync — PORT_MAP owns the port
+contract, SERVICES.json owns the start path.
+
+Proof that healing works: kill HERETIK, run `python -m evo services --heal`,
+and it comes back via `heretik\start_demand_proxy.cmd` (recovered :8080).
 
 ## The learning bridge (evo/learn.py)
 

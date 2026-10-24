@@ -220,6 +220,22 @@ def cmd_history(args) -> int:
 
 
 # ------------------------------------------------------------------ cycle ---
+def cmd_services(args) -> int:
+    """Registry-driven service survey. --heal restarts anything with a
+    documented start path that is down."""
+    from . import services as svc_mod
+    rows = svc_mod.survey(auto_heal=bool(getattr(args, "heal", False)))
+    if getattr(args, "json", False):
+        _print({"services": rows})
+        return 0
+    for r in rows:
+        flag = "OK " if r["status"] == "up" else ("---" if r["status"] == "retired" else "DOWN")
+        extra = f"  [{r['healed']}]" if r.get("healed") else ""
+        print(f"{flag} {r['name']:<12} :{r['port']:<6} {r['status']:<9} {r['kind']}{extra}")
+    return 0
+
+
+# ------------------------------------------------------------------ cycle ---
 def cmd_cycle(args) -> int:
     """Cron-safe: refresh scout, benchmark, publish status. No agent required."""
     paths.ensure_dirs()
@@ -243,6 +259,19 @@ def cmd_cycle(args) -> int:
     except Exception as e:
         learn_info = {"error": str(e)[:160]}
 
+    # HEAL FIRST: any service with a documented start path that is down gets
+    # restarted before scoring, so the loop fixes the host instead of writing
+    # notes about a dead port. Only services in the registry with a start path
+    # are touched; retired and operator-level services are reported only.
+    healed = []
+    try:
+        from . import services as svc_mod
+        for row in svc_mod.survey(auto_heal=True):
+            if row.get("healed"):
+                healed.append(f"{row['name']}:{row['port']} {row['healed']}")
+    except Exception as e:
+        healed = [f"heal error: {str(e)[:120]}"]
+
     sc = bench.run()
     archive.record_benchmark(sc.gate_score, len(sc.checks), len(sc.gate_failures), sc.to_dict())
 
@@ -263,6 +292,7 @@ def cmd_cycle(args) -> int:
         "failures": [{"name": c.name, "detail": c.detail} for c in sc.failures],
         "scout_findings": len(findings),
         "learning": learn_info,
+        "healed": healed,
         "archive": archive.stats(),
         "stack": str(paths.STACK),
     }
@@ -288,6 +318,10 @@ def main(argv=None) -> int:
     mi = sub.add_parser("mirror"); mi.add_argument("--all", action="store_true")
     mi.add_argument("--diff", action="store_true")
     mi.set_defaults(func=cmd_mirror)
+
+    sv = sub.add_parser("services"); sv.add_argument("--heal", action="store_true")
+    sv.add_argument("--json", action="store_true")
+    sv.set_defaults(func=cmd_services)
 
     a = sub.add_parser("audit"); a.add_argument("--json", action="store_true")
     a.set_defaults(func=cmd_audit)

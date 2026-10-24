@@ -31,6 +31,9 @@ def run() -> int:
             print("status parse error:", e)
             return 0
         print(f"GATE SCORE: {d.get('gate_score')}   HOST SCORE: {d.get('host_score')}")
+        healed = d.get("healed") or []
+        if healed:
+            print("HEALED: " + "; ".join(healed))
         learning = d.get("learning") or {}
         if learning:
             print(f"LEARNING: {learning.get('lessons')} lessons distilled, "

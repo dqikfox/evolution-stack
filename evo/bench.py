@@ -21,7 +21,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import paths
+from . import paths, services
 
 
 @dataclass
@@ -94,15 +94,26 @@ def _http_json(url: str, timeout: float = 4.0) -> tuple[bool, str]:
 
 # ---------------------------------------------------------------- checks ----
 def check_services() -> list[Check]:
+    """Registry-driven service checks.
+
+    - retired services are not checked at all (no implementation = no failure)
+    - services with a documented start path are gate-actionable (healable)
+    - services without one stay on the host score (operator action)
+    """
     out: list[Check] = []
-    for name, port in paths.CANONICAL_SERVICES.items():
+    for s in services.load():
+        if s.status == "retired":
+            continue
         t0 = time.time()
-        up = _port_open(port)
-        operator_level = name in paths.OPERATOR_LEVEL_SERVICES
+        st = services.status_of(s)
+        up = st == "up"
+        gate = up or s.healable
+        detail = f":{s.port} {st}"
+        if not up:
+            detail += " — healable (documented start path)" if s.healable else " — operator-level"
         out.append(Check(
-            name=f"service:{name}", group="services", weight=4.0, passed=up,
-            detail=f":{port} {'up' if up else ('DOWN — operator-level' if operator_level else 'DOWN')}",
-            elapsed=time.time() - t0, scored=not operator_level,
+            name=f"service:{s.name}", group="services", weight=4.0, passed=up,
+            detail=detail, elapsed=time.time() - t0, scored=gate,
         ))
     t0 = time.time()
     gw = _port_open(paths.GATEWAY_PORT)

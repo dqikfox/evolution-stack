@@ -119,6 +119,20 @@ Architecture, CLI, bench design, cron wiring and validator patterns:
 - **Mirroring the surface needs size discipline** — mirroring dot-directories
   (`.curator_backups`, `.hub`) pulled 254 MB of tarballs into the repo. Skip
   dot-paths and files over 512 KB.
+- **A service with no start path cannot be healed** — the loop was writing notes
+  about HERETIK :8080 and KRYSYS :8500 for days instead of restarting them.
+  Document the start path in `E:\ultron-memory\infra\SERVICES.json` and the
+  cycle restarts it automatically.
+- **Check that a service still exists before health-checking it** — ULTRON :8666
+  had no implementation left (its project directory was deleted, the startup
+  shortcut dangled), so the check was chasing a ghost and depressing the score.
+  Mark it `retired` and document the supersession.
+- **A dangling startup shortcut is worse than none** — it fails at every logon
+  and hides the fact that the service is gone. Resolve shortcuts to their real
+  targets before trusting a service registry.
+- **A self-copy in the working tree is not work** — `lumming.zip` plus its
+  extraction was 610 MB of the repo inside the repo. Verify the duplicate, then
+  delete and gitignore it.
 - **Report the delta, not the vibe** — "gate 84.62 → 76.92, rejected, rolled back"
   beats "made it better".
 - **Network awareness** — never ignore the relationship between this host (THRONE) and

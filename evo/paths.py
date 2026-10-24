@@ -53,6 +53,14 @@ CANONICAL_SERVICES = {
 OPERATOR_LEVEL_SERVICES = {"ultron", "krysys", "heretik"}
 GATEWAY_PORT = 18789
 
+# Canonical start-path registry. A service that has a start path here is
+# gate-actionable: the loop is allowed to restart it instead of just
+# reporting it. A service marked "retired" is never health-checked at all
+# (it had no implementation - e.g. ULTRON :8666, whose project directory was
+# deleted, so the check was chasing a ghost).
+SERVICES_REGISTRY = Path(r"E:\ultron-memory\infra\SERVICES.json")
+PORT_MAP = Path(r"E:\ultron-memory\infra\PORT_MAP.json")
+
 OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "starscream-64k"
 
