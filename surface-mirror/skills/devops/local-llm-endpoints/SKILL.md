@@ -40,8 +40,8 @@ Per-task variant recipes and the swap-probe script live in `throne-llm-router`.
 - Ollama OpenAI-compat: `http://localhost:11434/v1` (chat completions, embeddings, models)
 - Ollama native API: `http://localhost:11434/api/chat`, `/api/tags`, `/api/pull`
 - OpenClaw Control: `http://localhost:18789/` (web UI "OpenClaw Control"; serves SPA on every path — model listing via Ollama at :11434, not :18789 itself)
-- Cradle dev server: `http://localhost:8081/` (:8081 is Cradle's claim — never assign it to another service; never move back to :8080)
-- Heretik demand proxy: `http://localhost:8080/` — a stdlib Python proxy owns the contract port and lazily spawns llama-server on a non-conflicting backend port at first call (~10s cold start, ~60 tok/s warm), killing it after an idle timeout to free ~9GB RAM. Status probe: `GET :8080/__demand_status`. Clients (MCP, launchers) keep using :8080 unchanged; never point anything directly at the backend port.
+- Cradle: dev server `0.0.0.0:8080` (live-preview contract, strictPort) and built preview `127.0.0.1:8081` (strictPort). BOTH are Cradle's claim - never assign :8080 or :8081 to another service. The HERETIK demand proxy owns the :8080 CONTRACT, so Cradle's dev server and the proxy cannot run at the same time; the proxy's BACKEND must live on an unclaimed port (:8082), never :8081.
+- Heretik demand proxy: `http://localhost:8080/` — a stdlib Python proxy owns the contract port and lazily spawns llama-server on the UNCLAIMED backend port :8082 at first INFERENCE call (~10s cold start, ~60 tok/s warm), killing it after an idle timeout to free ~9GB RAM. Status probe: `GET :8080/__demand_status`. Clients (MCP, launchers) keep using :8080 unchanged; never point anything directly at the backend port. Three rules the implementation MUST keep: (1) `/health` is answered BY THE PROXY - forwarding it would cold-start the backend for a monitor's probe and keep it resident forever; (2) only inference traffic refreshes the idle timer; (3) a backend orphaned by a proxy restart is ADOPTED by PID (verified against the expected command line) so the reaper can release it.
 
 ## CyberStrike CLI
 

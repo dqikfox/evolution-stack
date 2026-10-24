@@ -37,6 +37,7 @@ set TESS_PORT=8705
 set TESS_LOG=%LOCALAPPDATA%\hermes\logs\tesseract_stdout.log
 set SPAWNER=%LOCALAPPDATA%\hermes\scripts\spawn_detached.py
 set PROBE=%LOCALAPPDATA%\hermes\scripts\probe_http.py
+set WAITER=%LOCALAPPDATA%\hermes\scripts\wait_for_http.py
 set TESS_HEALTH=http://127.0.0.1:%TESS_PORT%/health
 
 echo [tesseract] checking port %TESS_PORT%...
@@ -54,6 +55,10 @@ if not exist "%SPAWNER%" (
     echo [tesseract] FAILED: spawner missing at %SPAWNER%
     exit /b 1
 )
+if not exist "%WAITER%" (
+    echo [tesseract] FAILED: waiter missing at %WAITER%
+    exit /b 1
+)
 if not exist "%PROBE%" (
     echo [tesseract] FAILED: probe missing at %PROBE%
     exit /b 1
@@ -68,17 +73,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [tesseract] waiting for :%TESS_PORT%...
-set /a tries=0
-:wait
-"%SystemRoot%\System32\timeout.exe" /t 2 /nobreak >nul
-"%TESS_PY%" "%PROBE%" "%TESS_HEALTH%" 3
-if not errorlevel 1 (
-    echo [tesseract] up on :%TESS_PORT%
-    exit /b 0
+echo [tesseract] waiting for :%[A-Z_]+%...
+"%TESS_PY%" "%WAITER%" "%TESS_HEALTH%" 180 2
+if errorlevel 1 (
+    echo [tesseract] FAILED: the endpoint did not answer within 180s - see the log
+    exit /b 1
 )
-set /a tries+=1
-if %tries% lss 90 goto wait
-
-echo [tesseract] FAILED: :%TESS_PORT% did not open within 180s - see %TESS_LOG%
-exit /b 1
+echo [tesseract] up on :%[A-Z_]+%
+exit /b 0

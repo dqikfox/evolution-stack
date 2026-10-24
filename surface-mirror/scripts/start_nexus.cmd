@@ -29,6 +29,7 @@ set NEXUS_PORT=8650
 set NEXUS_SUP_LOG=%LOCALAPPDATA%\hermes\logs\nexus_supervisor_stdout.log
 set SPAWNER=%LOCALAPPDATA%\hermes\scripts\spawn_detached.py
 set PROBE=%LOCALAPPDATA%\hermes\scripts\probe_http.py
+set WAITER=%LOCALAPPDATA%\hermes\scripts\wait_for_http.py
 set NEXUS_HEALTH=http://127.0.0.1:%NEXUS_PORT%/health
 
 echo [nexus] checking port %NEXUS_PORT%...
@@ -50,6 +51,10 @@ if not exist "%SPAWNER%" (
     echo [nexus] FAILED: spawner missing at %SPAWNER%
     exit /b 1
 )
+if not exist "%WAITER%" (
+    echo [nexus] FAILED: waiter missing at %WAITER%
+    exit /b 1
+)
 if not exist "%PROBE%" (
     echo [nexus] FAILED: probe missing at %PROBE%
     exit /b 1
@@ -65,16 +70,10 @@ if errorlevel 1 (
 )
 
 echo [nexus] waiting for :%NEXUS_PORT%...
-set /a tries=0
-:wait
-"%SystemRoot%\System32\timeout.exe" /t 2 /nobreak >nul
-"%NEXUS_VENV%" "%PROBE%" "%NEXUS_HEALTH%" 3
-if not errorlevel 1 (
-    echo [nexus] up on :%NEXUS_PORT%
-    exit /b 0
+"%NEXUS_VENV%" "%WAITER%" "%NEXUS_HEALTH%" 180 2
+if errorlevel 1 (
+    echo [nexus] FAILED: the endpoint did not answer within 180s - see %NEXUS_SUP_LOG%
+    exit /b 1
 )
-set /a tries+=1
-if %tries% lss 90 goto wait
-
-echo [nexus] FAILED: :%NEXUS_PORT% did not open within 180s - see %NEXUS_SUP_LOG%
-exit /b 1
+echo [nexus] up on :%NEXUS_PORT%
+exit /b 0

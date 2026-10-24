@@ -106,6 +106,15 @@ def raise_alert(kind: str, message: str, data: dict) -> bool:
         return False
 
 
+# Windows pseudo-processes: "System Idle Process" accumulates the UNUSED
+# cycles, so psutil reports it as the top CPU consumer while the machine is
+# actually idle. Naming it makes the alert useless.
+NOT_ACTIONABLE = {
+    "System Idle Process", "Idle", "Registry", "Memory Compression",
+    "Secure System", "smss.exe", "csrss.exe", "wininit.exe", "winlogon.exe",
+}
+
+
 def top_consumers(limit: int = 3) -> list[str]:
     """Name the processes currently burning CPU, so the alert is actionable."""
     try:
@@ -128,11 +137,33 @@ def top_consumers(limit: int = 3) -> list[str]:
             cpu = proc.cpu_percent()
             if cpu and cpu > 5:
                 nm = proc.info.get("name") or "?"
+                if nm in NOT_ACTIONABLE:
+                    continue
                 names[nm] = names.get(nm, 0) + cpu
         except Exception:               # noqa: BLE001
             continue
     top = sorted(names.items(), key=lambda kv: kv[1], reverse=True)[:limit]
     return [f"{n} ({c:.0f}%)" for n, c in top]
+
+
+def top_memory(limit: int = 3) -> list[str]:
+    """Name the processes holding RAM, because RAM is what runs out first."""
+    try:
+        import psutil
+    except ImportError:
+        return []
+    totals: dict[str, int] = {}
+    for proc in psutil.process_iter(["name", "memory_info"]):
+        try:
+            nm = proc.info.get("name") or "?"
+            if nm in NOT_ACTIONABLE:
+                continue
+            rss = proc.info["memory_info"].rss
+            totals[nm] = totals.get(nm, 0) + rss
+        except Exception:               # noqa: BLE001
+            continue
+    top = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    return [f"{n} ({b / (1024 ** 3):.1f}GB)" for n, b in top if b > 256 * 1024 ** 2]
 
 
 def main() -> int:
@@ -163,12 +194,14 @@ def main() -> int:
         state = {"episode": "degraded", "since": time.time(), "run": run}
         save_state(state)
         who = ", ".join(top_consumers()) or "unknown"
+        mem = ", ".join(top_memory()) or "unknown"
         detail = {"episode": "started", "cpu": cpu, "ram_pct": ram, "gpu_temp": gpu,
-                  "samples": args.samples, "consumers": who}
+                  "samples": args.samples, "consumers": who, "ram_holders": mem}
         raise_alert("host_load",
                     f"Host load episode started (cpu {cpu}%, ram {ram}%)", detail)
         print(f"Host load episode STARTED: sustained pressure over {args.samples} samples "
-              f"(cpu {cpu}%, ram {ram}%, gpu {gpu}C). Main consumers: {who}.")
+              f"(cpu {cpu}%, ram {ram}%, gpu {gpu}C). Main consumers: {who}. "
+              f"RAM holders: {mem}.")
         return 0
 
     if not degraded_now and episode == "degraded":
@@ -177,6 +210,7 @@ def main() -> int:
         raise_alert("host_load",
                     f"Host load episode ended (cpu {cpu}%, ram {ram}%)",
                     {"episode": "ended", "cpu": cpu, "ram_pct": ram, "gpu_temp": gpu,
+                     "ram_holders": ", ".join(top_memory()) or "unknown",
                      "duration_s": round(time.time() - (since or time.time()))})
         print(f"Host load episode ENDED: pressure cleared (cpu {cpu}%, ram {ram}%, gpu {gpu}C).")
         return 0
