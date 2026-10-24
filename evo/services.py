@@ -117,6 +117,7 @@ def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
                 args.append(s.start_args)
             subprocess.Popen(args, cwd=str(p.parent),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True,
                              creationflags=0x08000000)  # DETACHED_PROCESS
         else:  # python script
             # Some services need a specific interpreter: NEXUS only works on
@@ -127,6 +128,7 @@ def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
                 return False, f"interpreter missing: {interpreter}"
             subprocess.Popen([interpreter, str(p)], cwd=str(p.parent),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True,
                              creationflags=0x08000000)
     except Exception as e:
         return False, f"launch failed: {e}"
