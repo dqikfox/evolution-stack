@@ -75,6 +75,56 @@ def record(target: str) -> str | None:
     return str(dest)
 
 
+# The mirror manages exactly these subtrees of surface-mirror. Nothing else
+# in the directory is touched by the pruner.
+MANAGED = ("skills", "scripts", "heretik")
+
+
+def prune() -> list[str]:
+    """Remove mirrored files whose source no longer exists.
+
+    The mirror is a PUBLICATION surface, so a file deleted from the live
+    surface must stop being published. Without this, the mirror only ever
+    grows: a transient test fixture that existed for a minute stays in the
+    public repository forever, and a retired script is still published.
+
+    Only files under the managed subtrees are considered, and only when the
+    source really is gone.
+    """
+    removed: list[str] = []
+    if not MIRROR.exists():
+        return removed
+    for top in MANAGED:
+        root = MIRROR / top
+        if not root.exists():
+            continue
+        for f in sorted(root.rglob("*"), key=lambda x: len(x.parts), reverse=True):
+            if not f.is_file():
+                continue
+            rel = f.relative_to(MIRROR).as_posix()
+            if rel.split("/")[0] not in MANAGED:
+                continue
+            if (paths.HERMES / rel).exists():
+                continue
+            try:
+                f.unlink()
+                removed.append(rel)
+            except OSError:
+                continue
+    # drop the directories the removals emptied
+    for top in MANAGED:
+        root = MIRROR / top
+        if not root.exists():
+            continue
+        for d in sorted(root.rglob("*"), key=lambda x: len(x.parts), reverse=True):
+            if d.is_dir():
+                try:
+                    d.rmdir()
+                except OSError:
+                    pass
+    return removed
+
+
 def record_all() -> list[str]:
     """Mirror every file currently in the surface. Used to seed the repo.
 
@@ -85,6 +135,7 @@ def record_all() -> list[str]:
     """
     REFUSED.clear()
     out = []
+    prune()
     for root in (paths.SKILLS_DIR, paths.SCRIPTS_DIR, paths.HERETIK_DIR):
         if not root.exists():
             continue
@@ -127,4 +178,5 @@ def diff_targets() -> list[str]:
 
 if __name__ == "__main__":
     import json
-    print(json.dumps({"mirrored": len(record_all()), "ts": time.time()}, indent=2))
+    print(json.dumps({"mirrored": len(record_all()), "pruned": len(prune()),
+                      "ts": time.time()}, indent=2))
