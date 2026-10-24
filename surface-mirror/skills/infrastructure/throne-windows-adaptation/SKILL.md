@@ -388,6 +388,31 @@ curl -s -H "Authorization: Bearer $token" "https://inference-api.nousresearch.co
 
 **Token expiry:** The `access_token` expires after 1 hour; `refresh_token` is handled automatically by `hermes auth refresh nous`.
 
+## A project venv can silently run on the AGENT's packages
+
+The Hermes agent runtime injects `PYTHONPATH` into every child it spawns, and
+those paths land ahead of a project venv's own `site-packages`. The result on
+THRONE: the NEXUS venv could not import `numpy` at all, and the TESSERACT
+suite ran against the agent's `fastapi 0.133.1` / `starlette 1.3.1` while the
+project pins `0.143.3` / `1.8.0`. **A green suite under a shadowed environment
+is not evidence.**
+
+Three rules, full detail and the guard code in `references/venv-isolation.md`:
+
+1. **Make the venv self-defending** — a `_hermes_env_guard.py` + `.pth` pair
+   in its `site-packages` drops foreign paths from `sys.path`/`PYTHONPATH`.
+   Installed in the NEXUS and TESSERACT venvs.
+2. **Run `check_env_isolation.py` BEFORE the suite** — it derives the package
+   list from `requirements.txt` and fails on a package that resolved outside
+   the project, and on a declared dependency that is not installed.
+3. **A requirements.txt that lists what you do not install is a lie** — keep
+   the core file to what the venv contains; heavy optional stacks (torch) go
+   in `requirements-optional.txt`.
+
+Strip the env when spawning services too (`clean_env()` in
+`evo/services.py`, `child_env()` in `run_nexus.py`, `server_env()` in
+TESSERACT `start.py`) so the guard is defence in depth.
+
 ## Quick recovery checklist
 1. `hermes gateway start`
 2. Retarget any cron still on nous/z-ai to ollama-launch
