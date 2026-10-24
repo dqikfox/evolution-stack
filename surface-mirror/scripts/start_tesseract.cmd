@@ -43,8 +43,8 @@ echo [tesseract] starting (server log: %TESS_LOG%)...
 cd /d "%TESS_PROJECT%"
 REM `start` (not `start /b`) so the server gets its own console and survives
 REM the launcher exiting - a /b child dies with the console it shares.
-REM `start` ignores a redirect applied to it, which is fine: start.py does the
-REM redirecting itself, one level below the 1Password CLI, into the log file.
+REM `start` ignores a redirect applied to it, which is fine: start.py owns the
+REM log file handle itself and hands it straight to the server process.
 start "TESSERACT" /min "%TESS_PY%" "%TESS_PROJECT%\start.py"
 
 echo [tesseract] waiting for :%TESS_PORT%...
