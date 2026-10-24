@@ -27,16 +27,31 @@ OLLAMA = "http://127.0.0.1:11434"
 LOG = Path(r"C:\Users\KING\AppData\Local\hermes\health\ollama-beat.jsonl")
 LOG.parent.mkdir(parents=True, exist_ok=True)
 
+# A loaded host answers slowly. Ollama answered in 1271ms on a 100%-CPU host
+# and was declared "DOWN" by a 2s timeout, which turned a busy machine into a
+# failed cron job every 5 minutes. The probe must have room to be honest;
+# it must still be bounded.
+PROBE_TIMEOUT = 10.0
+# One slow sample is not a dead service. "DOWN" needs a sustained failure.
+DOWN_STREAK = 3
+
 
 def probe() -> dict:
-    out = {"ts": time.time(), "ollama_http": False, "ollama_models": 0, "cpu": 0, "ram_pct": 0, "gpu_temp": None}
+    out = {"ts": time.time(), "ollama_http": False, "ollama_models": 0, "cpu": 0, "ram_pct": 0,
+           "gpu_temp": None, "ollama_error": None}
     try:
-        r = httpx.get(f"{OLLAMA}/api/tags", timeout=2.0)
+        r = httpx.get(f"{OLLAMA}/api/tags", timeout=PROBE_TIMEOUT)
         out["ollama_http"] = r.status_code == 200
         if out["ollama_http"]:
             out["ollama_models"] = len(r.json().get("models", []))
-    except Exception:
-        pass
+        else:
+            out["ollama_error"] = f"http_{r.status_code}"
+    except httpx.TimeoutException:
+        # A timeout is NOT a dead service - it is a slow one, and on this
+        # host a 100% CPU load is enough to cause it.
+        out["ollama_error"] = "timeout"
+    except Exception as e:
+        out["ollama_error"] = type(e).__name__
     out["cpu"] = psutil.cpu_percent(interval=0.2)
     out["ram_pct"] = psutil.virtual_memory().percent
     try:
@@ -67,6 +82,29 @@ def _cpu_sustained(threshold: float, samples: int = 3, gap: float = 0.5) -> bool
     return False
 
 
+def _consecutive_failures() -> int:
+    """How many samples in a row failed to reach Ollama (newest first).
+
+    A single missed sample is a slow host, not a dead service. Only a
+    sustained failure earns the word "DOWN", and only then does the job
+    report a failure.
+    """
+    if not LOG.exists():
+        return 0
+    rows = []
+    for line in LOG.read_text(encoding="utf-8", errors="ignore").splitlines()[-20:]:
+        try:
+            rows.append(json.loads(line))
+        except Exception:
+            continue
+    streak = 0
+    for row in reversed(rows):
+        if row.get("ollama_http"):
+            break
+        streak += 1
+    return streak
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quiet", action="store_true")
@@ -94,8 +132,16 @@ def main():
         print(json.dumps(p, indent=2))
 
     if not p["ollama_http"]:
-        print("OLLAMA DOWN", file=sys.stderr)
-        return 2
+        streak = _consecutive_failures()
+        if streak >= DOWN_STREAK:
+            print(f"OLLAMA DOWN ({p.get('ollama_error')}, {streak} consecutive samples)",
+                  file=sys.stderr)
+            return 2
+        # One missed sample on a loaded host is a slow service, not a dead
+        # one. The measurement is recorded; the job did its job.
+        print(f"ollama not answering ({p.get('ollama_error')}); "
+              f"{streak}/{DOWN_STREAK} consecutive - recorded, not failed", file=sys.stderr)
+        return 0
     if p["degraded"]:
         print(f"DEGRADED cpu={p['cpu']} ram={p['ram_pct']} ({', '.join(reasons)})",
               file=sys.stderr)
