@@ -174,6 +174,24 @@ defects found and the fixes, is in
   extraction is the repo inside the repo, and the proposer must never generate or
   keep one. Verify the duplicate, then delete and gitignore it. (For human commits,
   `code-review-light` runs this as its payload check.)
+- **A mirror that copies files verbatim will eventually publish a secret** — the
+  surface mirror copied a launcher containing a plaintext `N8N_ENCRYPTION_KEY` into
+  the PUBLIC `dqikfox/evolution-stack` repository. The fix is a refusal path, not
+  vigilance: `evo/secrets.py` scans a file, `evo/mirror.py` refuses to publish one
+  with a secret-shaped value, `evo/bench.py` gates on `secrets:mirror` /
+  `secrets:scripts`, and `hermes/scripts/safe_commit.py` refuses to stage one.
+  A secret belongs in 1Password and is read at run time — never in a file.
+- **A secret in git history is not a secret you deleted** — purge it in this order:
+  rotate the value first (so any cached copy is worthless), rewrite every blob
+  (`git filter-repo --replace-text`), force-push, then confirm the old commit is
+  unfetchable by SHA and the API no longer serves the file. Note that
+  `filter-repo --force` does a `git reset --hard`: it silently discards unstaged
+  work, so re-apply anything you had not committed.
+- **A service that inherits the launching session's stdout pipe never lets that
+  session end** — the child holds the pipe open after the session dies, so the
+  session never sees EOF, stays "running" forever, and replays its stale buffer
+  as endless heartbeats. `close_fds=True` is required on EVERY spawn in the
+  chain, not just the last one.
 - **Report the delta, not the vibe** — "gate 84.62 → 76.92, rejected, rolled back"
   beats "made it better".
 - **Network awareness** — never ignore the relationship between this host (THRONE) and

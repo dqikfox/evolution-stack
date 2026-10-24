@@ -1,7 +1,19 @@
 #!/usr/bin/env python
 """
-ollama-health.py - Cron-friendly health probe of local Ollama + summary.
-Exits 0 if healthy, 1 if degraded, 2 if dead.
+ollama-health.py - Cron-friendly health probe of local Ollama + host summary.
+
+Exit code means "did the probe do its job", not "is the host happy":
+    0  the probe measured successfully (the host may be busy - that is data)
+    2  the probe could not do its job (Ollama unreachable, deps missing)
+
+Why: a busy host is a HEALTH observation, not a probe failure. Reporting it
+through the job-failure channel meant a loaded machine produced a failed job
+every 5 minutes, which buries the failures that matter. The load state is
+recorded in the sample and judged by host_load_watchdog.py, which alerts on
+a TRANSITION (sustained pressure), not on every sample.
+
+Use --strict to get the old behaviour (exit 1 when degraded) for manual or
+CI use where a non-zero exit is what you want.
 """
 import sys, json, time, argparse
 from pathlib import Path
@@ -60,9 +72,21 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--cpu-threshold", type=float, default=99.5)
     ap.add_argument("--ram-threshold", type=float, default=98.0)
+    ap.add_argument("--strict", action="store_true",
+                    help="exit 1 when the host is degraded (manual/CI use)")
     args = ap.parse_args()
 
     p = probe()
+    # Degraded only when the pressure is sustained, not a single spike.
+    cpu_hot = _cpu_sustained(args.cpu_threshold)
+    reasons = []
+    if cpu_hot:
+        reasons.append(f"cpu_sustained>{args.cpu_threshold:g}")
+    if p["ram_pct"] > args.ram_threshold:
+        reasons.append(f"ram>{args.ram_threshold:g}")
+    p["degraded"] = bool(reasons)
+    p["reasons"] = reasons
+
     with LOG.open("a", encoding="utf-8") as f:
         f.write(json.dumps(p) + "\n")
 
@@ -72,11 +96,12 @@ def main():
     if not p["ollama_http"]:
         print("OLLAMA DOWN", file=sys.stderr)
         return 2
-    # Degraded only when the pressure is sustained, not a single spike.
-    cpu_hot = _cpu_sustained(args.cpu_threshold)
-    if cpu_hot or p["ram_pct"] > args.ram_threshold:
-        print(f"DEGRADED cpu={p['cpu']} ram={p['ram_pct']}", file=sys.stderr)
-        return 1
+    if p["degraded"]:
+        print(f"DEGRADED cpu={p['cpu']} ram={p['ram_pct']} ({', '.join(reasons)})",
+              file=sys.stderr)
+        if args.strict:
+            return 1
+    # The probe worked. Load is recorded, not failed.
     return 0
 
 
