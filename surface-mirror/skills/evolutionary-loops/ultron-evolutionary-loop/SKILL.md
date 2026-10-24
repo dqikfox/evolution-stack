@@ -37,6 +37,17 @@ Evolution Stack: `E:\ultron-memory\evolution-stack` (github.com/dqikfox/evolutio
 Architecture, CLI, bench design, cron wiring and validator patterns:
 `references/evolution-stack.md`. Read it before touching the loop.
 
+The two systems this stack coordinates:
+- **TESSERACT** (`:8705`, `C:\Users\KING\Projects\TESSERACT`) — the control
+  plane: service census, Ollama control, sessions, graph, operator buttons.
+- **NEXUS CORE** (`:8650`, `E:\ultron-memory\nexus-core`) — the knowledge
+  plane: Chroma vectors, hybrid search, RAG, hive bus, importers.
+
+The contract between them is `E:\ultron-memory\infra\SERVICES.json` (start
+paths) and the TESSERACT service registry. A full analysis of both, the
+defects found and the fixes, is in
+`docs/stack-analysis-tesseract-nexus.md` in the evolution-stack repo.
+
 ## Workflow (one cycle)
 0. **Learn** — `python -m evo learn` rebuilds the proposer prompt from live
    evidence: distilled lessons (`memories/LESSONS.md`), current cron failures,
@@ -44,8 +55,10 @@ Architecture, CLI, bench design, cron wiring and validator patterns:
    this automatically. A loop that cannot see what the operator corrected is
    blind: it repeats the same bad proposals.
 1. **Baseline** — `python -m evo cycle` (runs the scout, benchmarks, writes
-   `cron/output/evolution_status.json`). Never skip it; every improvement claim is a
-   delta against this baseline.
+   `cron/output/evolution_status.json`). The same command also **heals** any
+   service that has a documented start path in `E:\ultron-memory\infra\SERVICES.json`
+   before scoring, so a dead port is restarted rather than written about. Never
+   skip it; every improvement claim is a delta against this baseline.
 2. **Consolidate before you build** — `python -m evo audit`. If the audit reports
    MERGE / RETIRE / REPAIR items, clear those first. Adding a component on top of a
    redundant surface is regression dressed as progress.
@@ -123,6 +136,33 @@ Architecture, CLI, bench design, cron wiring and validator patterns:
   about HERETIK :8080 and KRYSYS :8500 for days instead of restarting them.
   Document the start path in `E:\ultron-memory\infra\SERVICES.json` and the
   cycle restarts it automatically.
+- **A start path without its interpreter is not a start path** — a script that
+  needs a specific environment (NEXUS needs the uv venv with numpy+chromadb)
+  will fail when the healer launches it with the bare `python` on PATH. Put the
+  interpreter in the registry entry (`"interpreter": "..."`) and the healer
+  uses it; the loop refuses to launch if the interpreter is missing.
+- **A bare background process is not a service** — NEXUS died on a Windows
+  socket-accept failure (`WinError 64`) and stayed dead because nothing owned
+  it. Every long-lived service needs a supervisor that restarts it with capped
+  backoff, reclaims the port from an orphaned previous instance, and reports
+  state to a status file. Then *prove* it: kill the child and verify it comes
+  back without intervention.
+- **A health endpoint that probes its own dependencies reports false outages** —
+  TESSERACT's `/health` ran a service census that included TESSERACT itself, so
+  the nested request timed out and the dashboard showed the instance as offline.
+  A liveness endpoint must be local-only and single-digit milliseconds, serving
+  dependency state from a background-loop cache.
+- **"The port answers" is not "the service works"** — NEXUS answered `/health`
+  with `200 OK` and `chroma: not_ready` in the same payload, for a long time.
+  Read the component block, not the envelope; a degraded component is a defect
+  even when the envelope is green.
+- **Hardcoded LAN addresses rot silently** — TESSERACT pointed four services at
+  `192.168.4.230`, a dead DHCP lease, so they were permanently "offline" while
+  two genuinely local services were classified as remote. Address remote hosts
+  by Tailscale IP, and verify every registry entry against the live machine.
+- **TestClient without a context manager never runs startup** — every NEXUS test
+  passed while the service could not start. Any test that must cover a startup
+  hook uses `with TestClient(app) as c:`.
 - **Check that a service still exists before health-checking it** — ULTRON :8666
   had no implementation left (its project directory was deleted, the startup
   shortcut dangled), so the check was chasing a ghost and depressing the score.
@@ -130,9 +170,10 @@ Architecture, CLI, bench design, cron wiring and validator patterns:
 - **A dangling startup shortcut is worse than none** — it fails at every logon
   and hides the fact that the service is gone. Resolve shortcuts to their real
   targets before trusting a service registry.
-- **A self-copy in the working tree is not work** — `lumming.zip` plus its
-  extraction was 610 MB of the repo inside the repo. Verify the duplicate, then
-  delete and gitignore it.
+- **A self-copy in the working tree is not work** — an archive of the repo plus its
+  extraction is the repo inside the repo, and the proposer must never generate or
+  keep one. Verify the duplicate, then delete and gitignore it. (For human commits,
+  `code-review-light` runs this as its payload check.)
 - **Report the delta, not the vibe** — "gate 84.62 → 76.92, rejected, rolled back"
   beats "made it better".
 - **Network awareness** — never ignore the relationship between this host (THRONE) and
