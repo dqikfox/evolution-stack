@@ -17,11 +17,14 @@ evo/bench.py          benchmark; gate score vs host score
 evo/archive.py        SQLite archive (variants, events, benchmarks)
 evo/snapshot.py       snapshot / restore / diff of the improvable surface
 evo/mutate.py         Ollama proposer + proposal safety validator
+evo/learn.py          the learning bridge: lessons + cron failures + archive -> proposer prompt
+evo/mirror.py         copies accepted surface changes into the repo (git-tracked history)
 evo/consolidation.py  inventory + KEEP/MERGE/RETIRE/REPAIR/DUPLICATE audit
 evo/loop.py           single CLI entry point
 tests/test_gate.py    end-to-end proof of both gate paths
 state/archive.db      live archive      reports/  consolidation reports
 snapshots/            pre-apply snapshots (zip of the whole surface)
+surface-mirror/       git-tracked copy of the surface as the loop changes it
 archive/legacy-scripts/  dead one-shot scripts retired from the surface
 ```
 
@@ -30,16 +33,39 @@ archive/legacy-scripts/  dead one-shot scripts retired from the surface
 ```powershell
 cd E:\ultron-memory\evolution-stack
 python -m evo bench            # scorecard: GATE SCORE + HOST SCORE, per-check pass/fail
+python -m evo learn            # rebuild the proposer prompt from live evidence
+python -m evo learn --status   # what the loop currently knows
 python -m evo audit            # consolidation audit -> reports/latest-consolidation.md
 python -m evo status           # archive stats, benchmark trend, best variant, snapshots
 python -m evo propose          # ask the local model for one change (records a variant)
 python -m evo apply <id>       # snapshot -> apply -> bench -> keep OR auto-rollback
 python -m evo rollback <snap>  # manual restore
+python -m evo mirror --all     # mirror the surface into this repo
 python -m evo history          # variant + benchmark history
-python -m evo cycle            # cron-safe: scout + bench + status file
+python -m evo cycle            # cron-safe: scout + LEARN + bench + status file
 ```
 
 `python -m evo bench` exit code is non-zero while gate-actionable failures remain.
+
+## The learning bridge (evo/learn.py)
+
+This is what makes the loop *learn* rather than *repeat*:
+
+```
+sessions ──► LESSONS.md ─┐
+cron failures ───────────┤
+rejected proposals ───────┼──► lessons brief ──► proposer prompt ──► candidate ──► GATE
+accepted wins ────────────┘        (state/proposer_prompt.txt, versioned in the archive)
+```
+
+`evo cycle` calls `evo learn` first, so every hourly cycle starts from current
+evidence. The brief includes a **DO NOT REPEAT** section built from rejected
+variants and a **WHAT WORKED** section built from accepted ones.
+
+Three benchmark checks make learning measurable and gate-actionable:
+`learning:lessons_present`, `learning:proposer_current` (prompt carries a
+learned context and is under 24h old), `learning:no_repeat` (rejected variants
+are carried into the prompt).
 
 ## Benchmark model
 

@@ -38,6 +38,11 @@ Architecture, CLI, bench design, cron wiring and validator patterns:
 `references/evolution-stack.md`. Read it before touching the loop.
 
 ## Workflow (one cycle)
+0. **Learn** — `python -m evo learn` rebuilds the proposer prompt from live
+   evidence: distilled lessons (`memories/LESSONS.md`), current cron failures,
+   previously rejected proposals, and previously accepted wins. `evo cycle` does
+   this automatically. A loop that cannot see what the operator corrected is
+   blind: it repeats the same bad proposals.
 1. **Baseline** — `python -m evo cycle` (runs the scout, benchmarks, writes
    `cron/output/evolution_status.json`). Never skip it; every improvement claim is a
    delta against this baseline.
@@ -53,7 +58,9 @@ Architecture, CLI, bench design, cron wiring and validator patterns:
 5. **Verify** — `python -m evo bench` and `python -m evo status`. Quote the numbers
    (before → after), never adjectives.
 6. **Record** — accepted and rejected variants live in the archive with their score
-   and reason; consolidation reports land in `reports/`.
+   and reason; consolidation reports land in `reports/`. An accepted change is
+   mirrored into the stack repo under `surface-mirror/` so what the loop changed is
+   git-tracked and diffable.
 
 ## Benchmark design (decides whether the loop works at all)
 - **Two scores.** `gate_score` counts only checks a *file change* can fix; `host_score`
@@ -96,6 +103,22 @@ Architecture, CLI, bench design, cron wiring and validator patterns:
 - **Recursion needs storage** — keep the proposer's own prompt in the archive and use
   the best-scoring proposer for the next mutation, otherwise the improver can never
   improve itself.
+- **Learning must be plumbed in** — lessons, cron failures and rejected proposals
+  belong in the proposer prompt (`evo learn`), not in a separate notes file. A
+  learning loop that does not change what it proposes is just a logger.
+- **A one-sample threshold is a false alarm** — `ollama-health.py` failed its cron
+  every 5 minutes because a single 100% CPU sample tripped the threshold. Require
+  sustained pressure (consecutive samples) before declaring degradation.
+- **Vault outages must not break automation** — 1Password's service account gets
+  rate-limited (its CLI even prints an empty retry hint). Cache resolved secrets
+  with Windows DPAPI (CurrentUser) so dependent jobs survive the outage; the
+  plaintext never touches disk or a command line.
+- **Orphaned search processes are a real load** — a stray `find`/`grep` burned
+  6,681 CPU-seconds and pegged the host at 100% CPU. Check for leftovers from
+  timed-out searches before blaming the workload.
+- **Mirroring the surface needs size discipline** — mirroring dot-directories
+  (`.curator_backups`, `.hub`) pulled 254 MB of tarballs into the repo. Skip
+  dot-paths and files over 512 KB.
 - **Report the delta, not the vibe** — "gate 84.62 → 76.92, rejected, rolled back"
   beats "made it better".
 - **Network awareness** — never ignore the relationship between this host (THRONE) and

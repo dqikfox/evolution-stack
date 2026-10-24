@@ -31,6 +31,10 @@ def run() -> int:
             print("status parse error:", e)
             return 0
         print(f"GATE SCORE: {d.get('gate_score')}   HOST SCORE: {d.get('host_score')}")
+        learning = d.get("learning") or {}
+        if learning:
+            print(f"LEARNING: {learning.get('lessons')} lessons distilled, "
+                  f"proposer refreshed (variant #{learning.get('variant_id')})")
         print(f"GATE-ACTIONABLE FAILURES: {d.get('gate_failed')}")
         for f in d.get("failures", [])[:10]:
             print("  FAIL", f.get("name"), "-", str(f.get("detail"))[:90])
