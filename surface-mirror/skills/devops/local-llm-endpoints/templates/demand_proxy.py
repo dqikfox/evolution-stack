@@ -155,7 +155,7 @@ def adopt_backend() -> int | None:
 
 def start_backend() -> bool:
     """Spawn llama-server and wait for /health. Returns True when ready."""
-    global backend_proc, backend_pid
+    global backend_proc, backend_pid, last_used
     with state_lock:
         if backend_proc is not None and backend_proc.poll() is None and backend_healthy():
             return True
@@ -183,6 +183,11 @@ def start_backend() -> bool:
                 backend_pid = backend_proc.pid
                 backend_state["running"] = True
                 backend_state["pid"] = backend_proc.pid
+                # A cold start is activity: the request that triggered it is
+                # still in flight, so the idle clock restarts here. Otherwise
+                # a backend started just before the deadline is reaped while
+                # its first caller is still waiting on it.
+                last_used = time.time()
                 log(f"backend ready in {time.time()-t0:.1f}s (pid {backend_proc.pid})")
                 return True
             time.sleep(0.5)
@@ -210,43 +215,70 @@ def _terminate_pid(pid: int) -> bool:
             return False
 
 
-def stop_backend() -> None:
-    """Release the backend's RAM - whether we spawned it or adopted it."""
+def _stop_backend_locked() -> None:
+    """Release the backend's RAM. The caller MUST hold state_lock.
+
+    Two things this must not do:
+      * stop the same pid twice (a spawned backend is also backend_pid);
+      * clear the globals for a backend that is NOT the one being stopped.
+        A request can arrive while the reaper is working and start a new
+        backend; wiping the handle to it would orphan it - a live multi-GB
+        process that nothing can ever reap.
+    """
     global backend_proc, backend_pid
-    with state_lock:
-        if backend_proc is not None:
-            p = backend_proc
-            log(f"idle timeout: stopping backend pid {p.pid}")
+    proc = backend_proc
+    adopted = backend_pid
+    # the same process can be both spawned and adopted - stop it once
+    spawned_pid = proc.pid if proc is not None else None
+    target_pids = {p for p in (spawned_pid, adopted) if p}
+    if proc is not None:
+        log(f"idle timeout: stopping backend pid {spawned_pid}")
+        try:
+            proc.terminate()
+            proc.wait(timeout=10)
+        except Exception:
             try:
-                p.terminate()
-                p.wait(timeout=10)
+                proc.kill()
             except Exception:
-                try:
-                    p.kill()
-                except Exception:
-                    pass
-            backend_proc = None
-        if backend_pid is not None:
-            if _is_our_backend(backend_pid):
-                log(f"idle timeout: stopping adopted backend pid {backend_pid}")
-                _terminate_pid(backend_pid)
-            backend_pid = None
+                pass
+    if adopted is not None and adopted != spawned_pid:
+        if _is_our_backend(adopted):
+            log(f"idle timeout: stopping adopted backend pid {adopted}")
+            _terminate_pid(adopted)
+    # only clear the handles that still refer to what we just stopped
+    if proc is not None and backend_proc is proc:
+        backend_proc = None
+    if adopted is not None and backend_pid == adopted:
+        backend_pid = None
+    # only clear the state if it still describes a backend we stopped
+    if backend_state.get("pid") in target_pids or backend_state.get("pid") is None:
         backend_state["running"] = False
         backend_state["pid"] = None
-        log("backend stopped - RAM released")
+    log("backend stopped - RAM released")
+
+
+def stop_backend() -> None:
+    """Public entry point: take the lock, then release the backend."""
+    with state_lock:
+        _stop_backend_locked()
 
 
 def watchdog() -> None:
+    """Reap an idle backend.
+
+    The idle check and the kill happen under ONE lock acquisition. If they
+    were separate, a request could arrive between them, cold-start a new
+    backend, and the reaper would then kill that new backend (or clear its
+    handle) - leaving a multi-GB process nothing can ever reap.
+    """
     while True:
         time.sleep(30)
-        idle = time.time() - last_used
-        if idle <= IDLE_TIMEOUT:
-            continue
         with state_lock:
-            spawned = backend_proc is not None
-            adopted = backend_pid is not None
-        if spawned or adopted:
-            stop_backend()
+            if (time.time() - last_used) <= IDLE_TIMEOUT:
+                continue
+            if backend_proc is None and backend_pid is None:
+                continue
+            _stop_backend_locked()
 
 
 def _is_use(path: str) -> bool:

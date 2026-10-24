@@ -76,10 +76,17 @@ def test_an_orphaned_backend_is_adopted():
 
 
 def test_the_reaper_terminates_by_pid():
+    """Both a spawned and an ADOPTED backend must be releasable by pid."""
     src = TEMPLATE.read_text(encoding="utf-8", errors="ignore")
-    seg = re.search(r"def stop_backend\(.*?\n\ndef ", src, re.S)
-    assert seg, "stop_backend must exist"
-    assert "backend_pid" in seg.group(0), "the reaper must handle an adopted backend"
+    seg = re.search(r"def _stop_backend_locked\(.*?\n\ndef ", src, re.S)
+    assert seg, "the locked reaper internal must exist"
+    body = seg.group(0)
+    assert "backend_pid" in body, "the reaper must handle an adopted backend"
+    assert "_terminate_pid" in body, "an adopted backend must be terminated by pid"
+    # the public entry point must take the lock before killing anything
+    entry = re.search(r"def stop_backend\(.*?\n\ndef ", src, re.S)
+    assert entry, "stop_backend must exist"
+    assert "state_lock" in entry.group(0), "stop_backend must take the lock"
 
 
 def test_the_template_config_is_generic():
@@ -98,6 +105,139 @@ def test_the_live_copy_has_not_drifted():
     assert live == tmpl, (
         "the live demand proxy and the published template have drifted - "
         "fix both or regenerate the template from the live file")
+
+
+
+
+# ---------------------------------------------------------------------------
+# The reaper's races. These are behavioural tests against the real module.
+# ---------------------------------------------------------------------------
+def _load_module():
+    """Import the template as a module so its reaper can be driven directly."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("demand_proxy_under_test", TEMPLATE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _FakeProc:
+    """Stands in for a Popen handle."""
+    def __init__(self, pid):
+        self.pid = pid
+        self.terminated = 0
+
+    def terminate(self):
+        self.terminated += 1
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self):
+        pass
+
+    def poll(self):
+        return None
+
+
+def _reap_once(mod):
+    """One iteration of the watchdog's atomic check-and-kill."""
+    import time as _t
+    with mod.state_lock:
+        if (_t.time() - mod.last_used) <= mod.IDLE_TIMEOUT:
+            return False
+        if mod.backend_proc is None and mod.backend_pid is None:
+            return False
+        mod._stop_backend_locked()
+        return True
+
+
+def _age(mod):
+    mod.last_used = __import__("time").time() - (mod.IDLE_TIMEOUT + 60)
+
+
+def test_the_same_backend_is_not_stopped_twice():
+    """A spawned backend is also backend_pid - one process, one stop."""
+    mod = _load_module()
+    mod._terminate_pid = lambda pid: True
+    mod._is_our_backend = lambda pid: True
+    proc = _FakeProc(4242)
+    mod.backend_proc = proc
+    mod.backend_pid = 4242
+    mod.backend_state.update(running=True, pid=4242)
+    _age(mod)
+    assert _reap_once(mod) is True
+    assert proc.terminated == 1, "the backend must be terminated exactly once"
+    assert mod.backend_proc is None and mod.backend_pid is None, "the handles must be cleared"
+
+
+def test_a_fresh_backend_is_never_reaped():
+    """A backend that was just used must survive the reaper."""
+    mod = _load_module()
+    mod._terminate_pid = lambda pid: True
+    mod._is_our_backend = lambda pid: True
+    proc = _FakeProc(2222)
+    mod.backend_proc = proc
+    mod.backend_pid = 2222
+    mod.backend_state.update(running=True, pid=2222)
+    mod.last_used = __import__("time").time()
+    assert _reap_once(mod) is False
+    assert proc.terminated == 0, "a backend in use must not be terminated"
+    assert mod.backend_proc is proc, "the handle must survive"
+
+
+def test_a_stale_backend_is_reaped_and_its_state_cleared():
+    mod = _load_module()
+    mod._terminate_pid = lambda pid: True
+    mod._is_our_backend = lambda pid: True
+    proc = _FakeProc(3333)
+    mod.backend_proc = proc
+    mod.backend_pid = 3333
+    mod.backend_state.update(running=True, pid=3333)
+    _age(mod)
+    assert _reap_once(mod) is True
+    assert proc.terminated == 1
+    assert mod.backend_state["running"] is False
+    assert mod.backend_state["pid"] is None
+
+
+def test_a_backend_started_during_a_reap_is_not_orphaned():
+    """The orphan bug: a request cold-starts a backend while the reaper runs.
+
+    The reaper must not clear the NEW backend's handle, or a multi-GB
+    process lives on with nothing able to reap it.
+    """
+    mod = _load_module()
+    mod._terminate_pid = lambda pid: True
+    mod._is_our_backend = lambda pid: True
+    proc = _FakeProc(4444)
+    mod.backend_proc = proc
+    mod.backend_pid = 4444
+    mod.backend_state.update(running=True, pid=4444)
+    _age(mod)
+    assert _reap_once(mod) is True
+    # a request arrives and cold-starts a new backend
+    mod.backend_proc = _FakeProc(5555)
+    mod.backend_pid = 5555
+    mod.backend_state.update(running=True, pid=5555)
+    mod.last_used = __import__("time").time()
+    assert _reap_once(mod) is False
+    assert mod.backend_proc is not None and mod.backend_proc.pid == 5555, \
+        "the reaper must not wipe a newer backend's handle"
+
+
+def test_the_idle_check_and_the_kill_are_one_atomic_step():
+    """The check and the kill must not be separable by a concurrent spawn."""
+    src = TEMPLATE.read_text(encoding="utf-8", errors="ignore")
+    seg = re.search(r"def watchdog\(.*?\n\ndef ", src, re.S)
+    assert seg, "watchdog must exist"
+    body = seg.group(0)
+    assert "with state_lock:" in body, "the watchdog must take the lock"
+    # the idle test must be INSIDE the locked block, not before it
+    lock_at = body.index("with state_lock:")
+    idle_at = body.index("last_used")
+    assert idle_at > lock_at, "the idle check must happen under the lock, not before it"
+    assert "_stop_backend_locked" in body, "the kill must use the locked internal"
 
 
 if __name__ == "__main__":
