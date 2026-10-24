@@ -1,0 +1,329 @@
+"""The acceptance benchmark — objective ground truth for every proposed change.
+
+Without this, "self-improvement" is a vibe. Every candidate patch is applied,
+the stack is re-benchmarked, and the change is kept ONLY if the score improves.
+Anything that regresses is rolled back automatically.
+
+Score is a weighted percentage (0-100). Weights reflect blast radius:
+a dead service hurts more than a stale doc.
+"""
+from __future__ import annotations
+
+import json
+import os
+import py_compile
+import shutil
+import socket
+import subprocess
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from . import paths
+
+
+@dataclass
+class Check:
+    name: str
+    group: str
+    weight: float
+    passed: bool
+    detail: str = ""
+    elapsed: float = 0.0
+    scored: bool = True   # False = reported, but not part of the gate score
+
+
+@dataclass
+class Scorecard:
+    score: float
+    checks: list[Check] = field(default_factory=list)
+    gate_score: float = 0.0
+
+    @property
+    def failures(self) -> list[Check]:
+        return [c for c in self.checks if not c.passed]
+
+    @property
+    def passed(self) -> list[Check]:
+        return [c for c in self.checks if c.passed]
+
+    @property
+    def gate_failures(self) -> list[Check]:
+        """Failures the gate can actually act on (scored checks only)."""
+        return [c for c in self.checks if not c.passed and c.scored]
+
+    def to_dict(self) -> dict:
+        return {
+            "score": round(self.score, 2),
+            "gate_score": round(self.gate_score, 2),
+            "total": len(self.checks),
+            "failed": len(self.failures),
+            "gate_failed": len(self.gate_failures),
+            "checks": [
+                {
+                    "name": c.name, "group": c.group, "weight": c.weight,
+                    "passed": c.passed, "detail": c.detail,
+                    "elapsed": round(c.elapsed, 3), "scored": c.scored,
+                }
+                for c in self.checks
+            ],
+        }
+
+
+def _port_open(port: int, host: str = "127.0.0.1", timeout: float = 0.5) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _http_json(url: str, timeout: float = 4.0) -> tuple[bool, str]:
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read(4_000_000).decode("utf-8", "replace")
+            return True, body
+    except urllib.error.HTTPError as e:
+        return False, f"HTTP {e.code}"
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
+# ---------------------------------------------------------------- checks ----
+def check_services() -> list[Check]:
+    out: list[Check] = []
+    for name, port in paths.CANONICAL_SERVICES.items():
+        t0 = time.time()
+        up = _port_open(port)
+        operator_level = name in paths.OPERATOR_LEVEL_SERVICES
+        out.append(Check(
+            name=f"service:{name}", group="services", weight=4.0, passed=up,
+            detail=f":{port} {'up' if up else ('DOWN — operator-level' if operator_level else 'DOWN')}",
+            elapsed=time.time() - t0, scored=not operator_level,
+        ))
+    t0 = time.time()
+    gw = _port_open(paths.GATEWAY_PORT)
+    out.append(Check(
+        name="service:gateway", group="services", weight=4.0, passed=gw,
+        detail=f":{paths.GATEWAY_PORT} {'up' if gw else 'DOWN'}",
+        elapsed=time.time() - t0,
+    ))
+    return out
+
+
+def check_nexus_api() -> Check:
+    t0 = time.time()
+    ok, body = _http_json("http://127.0.0.1:8650/health")
+    return Check("nexus:health", "apis", 5.0, ok, body[:120], time.time() - t0)
+
+
+def check_ollama_api() -> Check:
+    t0 = time.time()
+    ok, body = _http_json("http://127.0.0.1:11434/api/tags")
+    models = 0
+    if ok:
+        try:
+            models = len(json.loads(body).get("models", []))
+        except Exception:
+            pass
+    return Check("ollama:tags", "apis", 4.0, ok and models > 0,
+                 f"{models} models" if ok else body[:100], time.time() - t0)
+
+def check_skills() -> list[Check]:
+    out: list[Check] = []
+    root = paths.SKILLS_DIR
+    t0 = time.time()
+    if not root.exists():
+        return [Check("skills:dir", "surface", 6.0, False, f"missing {root}")]
+    dirs = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")]
+    skills = [d for d in dirs if (d / "SKILL.md").exists()]
+    nested = [d for d in dirs if not (d / "SKILL.md").exists() and list(d.glob("*/SKILL.md"))]
+    broken = [d.name for d in nested if not list(d.glob("*/SKILL.md"))]
+    out.append(Check(
+        "skills:manifest", "surface", 6.0, not broken,
+        f"{len(skills)} skills + {len(nested)} categories, {len(broken)} broken"
+        + (f": {', '.join(broken[:5])}" if broken else ""),
+        time.time() - t0,
+    ))
+    return out
+
+
+def check_scripts_compile() -> Check:
+    t0 = time.time()
+    root = paths.SCRIPTS_DIR
+    if not root.exists():
+        return Check("scripts:compile", "surface", 6.0, False, f"missing {root}")
+    bad = []
+    count = 0
+    tmpdir = None
+    try:
+        import tempfile
+        tmpdir = tempfile.mkdtemp(prefix="evobench_")
+        for p in root.rglob("*.py"):
+            if any(x in p.parts for x in (".venv", "venv", "__pycache__", "node_modules")):
+                continue
+            count += 1
+            try:
+                py_compile.compile(str(p), doraise=True,
+                                   cfile=str(Path(tmpdir) / f"{count}.pyc"))
+            except Exception as e:
+                bad.append(f"{p.name}: {type(e).__name__}")
+    finally:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    return Check("scripts:compile", "surface", 6.0, not bad,
+                 f"{count} scripts, {len(bad)} broken" + (f": {', '.join(bad[:4])}" if bad else ""),
+                 time.time() - t0)
+
+
+def check_cron() -> list[Check]:
+    out: list[Check] = []
+    t0 = time.time()
+    p = paths.CRON_JOBS
+    if not p.exists():
+        return [Check("cron:jobs", "cron", 6.0, False, f"missing {p}")]
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        jobs = data.get("jobs", data) if isinstance(data, dict) else data
+        jobs = jobs if isinstance(jobs, list) else list(jobs.values())
+    except Exception as e:
+        return [Check("cron:jobs", "cron", 6.0, False, f"unparseable: {e}")]
+
+    out.append(Check("cron:parse", "cron", 3.0, True, f"{len(jobs)} jobs", time.time() - t0))
+
+    paid = [j.get("name") or j.get("id") for j in jobs
+            if str(j.get("provider") or "") == "nous" or str(j.get("model") or "").startswith("z-ai/")]
+    out.append(Check("cron:no-paid-pins", "cron", 4.0, not paid,
+                     "none" if not paid else f"paid pins: {paid}", time.time() - t0))
+
+    failing = [(j.get("name") or j.get("id"), int(j.get("failure_streak") or 0))
+               for j in jobs if int(j.get("failure_streak") or 0) >= 5]
+    out.append(Check("cron:failure-streaks", "cron", 4.0, not failing,
+                     "healthy" if not failing else str(failing), time.time() - t0))
+    return out
+
+
+def check_config() -> Check:
+    t0 = time.time()
+    p = paths.CONFIG_YAML
+    if not p.exists():
+        return Check("config:present", "config", 4.0, False, f"missing {p}")
+    try:
+        import yaml  # optional
+        yaml.safe_load(p.read_text(encoding="utf-8"))
+        return Check("config:yaml", "config", 4.0, True, "parses", time.time() - t0)
+    except ImportError:
+        txt = p.read_text(encoding="utf-8", errors="ignore")
+        return Check("config:yaml", "config", 4.0, len(txt) > 0,
+                     f"{len(txt)} bytes (pyyaml absent)", time.time() - t0)
+    except Exception as e:
+        return Check("config:yaml", "config", 4.0, False, str(e)[:120], time.time() - t0)
+
+
+def check_memory() -> list[Check]:
+    out: list[Check] = []
+    t0 = time.time()
+    p = paths.MEMORY_MD
+    if not p.exists():
+        p = paths.HERMES / "MEMORY.md"
+    if not p.exists():
+        return [Check("memory:present", "memory", 4.0, False, "no MEMORY.md found")]
+    txt = p.read_text(encoding="utf-8", errors="ignore")
+    out.append(Check("memory:present", "memory", 2.0, len(txt) > 0,
+                     f"{len(txt)} chars", time.time() - t0))
+    over = len(txt) > 12000
+    out.append(Check("memory:budget", "memory", 2.0, not over,
+                     "over budget" if over else f"{len(txt)} chars", time.time() - t0))
+    return out
+
+
+def check_repos() -> list[Check]:
+    """Informational only: repo cleanliness is an operator concern, not a
+    file-level fix, so it is reported but excluded from the gate score."""
+    out: list[Check] = []
+    for repo in paths.KEY_REPOS:
+        t0 = time.time()
+        if not repo.exists():
+            out.append(Check(f"repo:{repo.name}", "repos", 1.5, False, "missing",
+                             time.time() - t0, scored=False))
+            continue
+        try:
+            r = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"],
+                               capture_output=True, text=True, timeout=20)
+            dirty = len([l for l in r.stdout.splitlines() if l.strip()])
+            out.append(Check(f"repo:{repo.name}", "repos", 1.5, dirty == 0,
+                             "clean" if dirty == 0 else f"{dirty} uncommitted",
+                             time.time() - t0, scored=False))
+        except Exception as e:
+            out.append(Check(f"repo:{repo.name}", "repos", 1.5, False,
+                             str(e)[:80], time.time() - t0, scored=False))
+    return out
+
+
+def check_scout() -> list[Check]:
+    out: list[Check] = []
+    t0 = time.time()
+    out.append(Check("scout:script", "evolution", 3.0, paths.SCOUT.exists(),
+                     "present" if paths.SCOUT.exists() else "missing", time.time() - t0))
+    t0 = time.time()
+    rp = paths.SCOUT_REPORT
+    if rp.exists():
+        try:
+            d = json.loads(rp.read_text(encoding="utf-8"))
+            ts = d.get("ts")
+            age = time.time() - (time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S"))
+                                 if ts else 0)
+            fresh = age < 86400 * 3
+            out.append(Check("scout:fresh", "evolution", 3.0, fresh,
+                             f"{int(age/3600)}h old, {d.get('finding_count')} findings",
+                             time.time() - t0))
+        except Exception as e:
+            out.append(Check("scout:fresh", "evolution", 3.0, False, str(e)[:80], time.time() - t0))
+    else:
+        out.append(Check("scout:fresh", "evolution", 3.0, False, "no report", time.time() - t0))
+    return out
+
+
+def check_stack_self() -> list[Check]:
+    t0 = time.time()
+    from . import archive
+    try:
+        archive.init()
+        s = archive.stats()
+        ok = True
+        detail = f"{s['variants']} variants, best={s['best_score']}"
+    except Exception as e:
+        ok, detail = False, str(e)[:100]
+    return [Check("stack:archive", "evolution", 4.0, ok, detail, time.time() - t0)]
+
+
+# ------------------------------------------------------------------ runner ---
+def run() -> Scorecard:
+    checks: list[Check] = []
+    for fn in (
+        check_services, check_nexus_api, check_ollama_api, check_skills,
+        check_scripts_compile, check_cron, check_config, check_memory,
+        check_repos, check_scout, check_stack_self,
+    ):
+        try:
+            res = fn()
+        except Exception as e:
+            res = [Check(name=fn.__name__, group="error", weight=3.0, passed=False,
+                         detail=f"{type(e).__name__}: {e}"[:120])]
+        if isinstance(res, Check):
+            res = [res]
+        checks.extend(res)
+    total_w = sum(c.weight for c in checks if c.scored) or 1.0
+    got = sum(c.weight for c in checks if c.passed and c.scored)
+    gate = 100.0 * got / total_w
+    all_w = sum(c.weight for c in checks) or 1.0
+    all_got = sum(c.weight for c in checks if c.passed)
+    return Scorecard(score=100.0 * all_got / all_w, checks=checks, gate_score=gate)
+
+
+if __name__ == "__main__":
+    sc = run()
+    print(json.dumps(sc.to_dict(), indent=2))

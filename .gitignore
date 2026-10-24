@@ -1,0 +1,7 @@
+state/
+snapshots/
+archive/
+__pycache__/
+*.pyc
+reports/consolidation-*.json
+reports/consolidation-*.md

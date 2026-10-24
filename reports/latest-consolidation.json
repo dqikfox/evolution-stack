@@ -1,0 +1,1529 @@
+{
+  "ts": 1792813033.8244467,
+  "totals": {
+    "skills": 48,
+    "cron_jobs": 8,
+    "scripts": 36,
+    "mcp_servers": 15,
+    "prior_attempts": 2,
+    "profile_duplicates": 1,
+    "verdicts": {
+      "KEEP": 88,
+      "REPAIR": 2,
+      "MERGE": 2,
+      "DUPLICATE": 1
+    }
+  },
+  "skills": [
+    {
+      "id": "1password",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\1password\\SKILL.md",
+      "description": "Set up op CLI, sign in, and read or inject secrets.",
+      "files": 3
+    },
+    {
+      "id": "3-statement-model",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\3-statement-model\\SKILL.md",
+      "description": "Build integrated IS/BS/CF financial workbooks in Excel.",
+      "files": 4
+    },
+    {
+      "id": "agentmail",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\agentmail\\SKILL.md",
+      "description": "\"Give the agent its own inbox: send and receive email.\"",
+      "files": 1
+    },
+    {
+      "id": "alchemy_forensics",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\alchemy_forensics\\SKILL.md",
+      "description": "Use for chemical lineage reconstruction in historical alchemy corpora, including candidate-dossier comparison of recommended vs deprecated routes.",
+      "files": 7
+    },
+    {
+      "id": "antigravity-cli",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\antigravity-cli\\SKILL.md",
+      "description": "\"Operate the Antigravity CLI (agy): plugins, auth, sandbox.\"",
+      "files": 2
+    },
+    {
+      "id": "apple",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\apple\\apple-notes\\SKILL.md",
+      "description": "",
+      "files": 5
+    },
+    {
+      "id": "audio-tts-orchestrator",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\audio-tts-orchestrator\\SKILL.md",
+      "description": "Coordinate Edge, OpenAI, ElevenLabs, pyttsx3 TTS.",
+      "files": 1
+    },
+    {
+      "id": "autonomous-ai-agents",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\autonomous-ai-agents\\claude-code\\SKILL.md",
+      "description": "",
+      "files": 48
+    },
+    {
+      "id": "axolotl",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\axolotl\\SKILL.md",
+      "description": "\"Axolotl: YAML LLM fine-tuning (LoRA, DPO, GRPO).\"",
+      "files": 5
+    },
+    {
+      "id": "bioinformatics",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\bioinformatics\\SKILL.md",
+      "description": "Gateway to 400+ genomics and computational biology skills.",
+      "files": 1
+    },
+    {
+      "id": "blackbox",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\blackbox\\SKILL.md",
+      "description": "Delegate coding tasks to the Blackbox AI multi-model CLI.",
+      "files": 1
+    },
+    {
+      "id": "blender-mcp",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\blender-mcp\\SKILL.md",
+      "description": "Advanced bridge to Blender via MCP. Allows querying scene, creating objects, applying materials, and running custom BPY code in real-time.",
+      "files": 8
+    },
+    {
+      "id": "bot-team",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\bot-team\\SKILL.md",
+      "description": "6-bot cooperative Telegram team. R2, Jarvis, Ultron + 3.",
+      "files": 2
+    },
+    {
+      "id": "cia-research",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\cia-research\\SKILL.md",
+      "description": "Search the OCR'd declassified CIA documents (AI symposia, Stargate/SRI, JPRS) and run the expert-system and classifier tools.",
+      "files": 1
+    },
+    {
+      "id": "code-review-light",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\code-review-light\\SKILL.md",
+      "description": "Pre-commit review for secrets and syntax.",
+      "files": 1
+    },
+    {
+      "id": "creative",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\creative\\architecture-diagram\\SKILL.md",
+      "description": "",
+      "files": 223
+    },
+    {
+      "id": "devops",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\devops\\android-adb-media-restore\\SKILL.md",
+      "description": "",
+      "files": 5
+    },
+    {
+      "id": "elevenlabs-personal-voice",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\elevenlabs-personal-voice\\SKILL.md",
+      "description": "Personal ElevenLabs TTS via mcp_elevenlabs_synthesize.",
+      "files": 1
+    },
+    {
+      "id": "email",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\email\\agentmail\\SKILL.md",
+      "description": "",
+      "files": 11
+    },
+    {
+      "id": "esoteric-corpus-research",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\esoteric-corpus-research\\SKILL.md",
+      "description": "Use when decoding esoteric corpora into tiered logs.",
+      "files": 2
+    },
+    {
+      "id": "evolutionary-loops",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\evolutionary-loops\\ultron-evolutionary-loop\\SKILL.md",
+      "description": "",
+      "files": 1
+    },
+    {
+      "id": "github",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\github\\github-auth\\SKILL.md",
+      "description": "",
+      "files": 17
+    },
+    {
+      "id": "hf-models",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\hf-models\\SKILL.md",
+      "description": "HuggingFace search/download/upload via mcp_hf_* tools.",
+      "files": 1
+    },
+    {
+      "id": "ibm-watsonx",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\ibm-watsonx\\business-term-evaluation\\SKILL.md",
+      "description": "",
+      "files": 17
+    },
+    {
+      "id": "infrastructure",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\infrastructure\\android-simplex-media-archiver\\SKILL.md",
+      "description": "",
+      "files": 26
+    },
+    {
+      "id": "mainframe-bootstrap",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\mainframe-bootstrap\\SKILL.md",
+      "description": "Bootstrap THRONE with Python, services, scripts.",
+      "files": 1
+    },
+    {
+      "id": "media",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\media\\gif-search\\SKILL.md",
+      "description": "",
+      "files": 7
+    },
+    {
+      "id": "memory-promoter",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\memory-promoter\\SKILL.md",
+      "description": "Promote stable, demote dated, delete stale memory.",
+      "files": 1
+    },
+    {
+      "id": "metasploit-operations",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\metasploit-operations\\SKILL.md",
+      "description": "Use when operating Metasploit Framework on Windows hosts.",
+      "files": 1
+    },
+    {
+      "id": "mlops",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\mlops\\huggingface-hub\\SKILL.md",
+      "description": "",
+      "files": 56
+    },
+    {
+      "id": "note-taking",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\note-taking\\obsidian\\SKILL.md",
+      "description": "",
+      "files": 2
+    },
+    {
+      "id": "notion-ops",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\notion-ops\\SKILL.md",
+      "description": "Notion pages, databases, blocks via mcp_notion_* tools.",
+      "files": 1
+    },
+    {
+      "id": "obsidian-graph-view",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\obsidian-graph-view\\SKILL.md",
+      "description": "Use when building an Obsidian-style force-directed graph.",
+      "files": 1
+    },
+    {
+      "id": "productivity",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\productivity\\airtable\\SKILL.md",
+      "description": "",
+      "files": 86
+    },
+    {
+      "id": "public-tunnel-for-apps",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\public-tunnel-for-apps\\SKILL.md",
+      "description": "Expose local apps via serveo SSH tunnel or Netlify drop.",
+      "files": 3
+    },
+    {
+      "id": "research",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\research\\arxiv\\SKILL.md",
+      "description": "",
+      "files": 77
+    },
+    {
+      "id": "security",
+      "kind": "skill",
+      "has_manifest": false,
+      "is_category": false,
+      "manifest_path": "",
+      "description": "",
+      "files": 0
+    },
+    {
+      "id": "smart-home",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\smart-home\\openhue\\SKILL.md",
+      "description": "",
+      "files": 2
+    },
+    {
+      "id": "social-media",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\social-media\\reddit-reading\\SKILL.md",
+      "description": "",
+      "files": 4
+    },
+    {
+      "id": "software-development",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\software-development\\bulk-file-surgery\\SKILL.md",
+      "description": "",
+      "files": 53
+    },
+    {
+      "id": "telegram-3bot-blast",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\telegram-3bot-blast\\SKILL.md",
+      "description": "Telegram bots default/droid/ultron via mcp_telegram_send.",
+      "files": 1
+    },
+    {
+      "id": "telegram-export-analysis",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\telegram-export-analysis\\SKILL.md",
+      "description": "Use when analyzing Telegram HTML chat exports.",
+      "files": 1
+    },
+    {
+      "id": "tesseract-visual-verify",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\tesseract-visual-verify\\SKILL.md",
+      "description": "Verify TESSERACT UI via Playwright screenshots.",
+      "files": 1
+    },
+    {
+      "id": "throne-mcp-toolkit",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\throne-mcp-toolkit\\SKILL.md",
+      "description": "THRONE MCP tool cheatsheet (hf, notion, telegram, etc).",
+      "files": 2
+    },
+    {
+      "id": "throttle-cleanup",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": false,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\throttle-cleanup\\SKILL.md",
+      "description": "Kill Windows throttling processes safely.",
+      "files": 1
+    },
+    {
+      "id": "video",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\video\\video-surveillance-scanner\\SKILL.md",
+      "description": "",
+      "files": 2
+    },
+    {
+      "id": "web",
+      "kind": "skill",
+      "has_manifest": true,
+      "is_category": true,
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\web\\blocked-page-recovery\\SKILL.md",
+      "description": "",
+      "files": 4
+    },
+    {
+      "id": "web-development",
+      "kind": "skill",
+      "has_manifest": false,
+      "is_category": false,
+      "manifest_path": "",
+      "description": "",
+      "files": 0
+    }
+  ],
+  "cron_jobs": [
+    {
+      "id": "b7da3fe7e86e",
+      "kind": "cron",
+      "name": "Nexus_Core_Sync",
+      "enabled": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 60,
+        "display": "every 60m"
+      },
+      "model": "starscream-64k",
+      "provider": "ollama-launch",
+      "failure_streak": 0,
+      "last_error": "",
+      "no_agent": false
+    },
+    {
+      "id": "12162398f6f1",
+      "kind": "cron",
+      "name": "System Health Watchdog (Thermal/Load)",
+      "enabled": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
+      "model": "starscream-64k",
+      "provider": "ollama-launch",
+      "failure_streak": 0,
+      "last_error": "",
+      "no_agent": true
+    },
+    {
+      "id": "cb73e3a6531b",
+      "kind": "cron",
+      "name": "Live World Feed Watchdog",
+      "enabled": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 30,
+        "display": "every 30m"
+      },
+      "model": "starscream-64k",
+      "provider": "ollama-launch",
+      "failure_streak": 0,
+      "last_error": "",
+      "no_agent": true
+    },
+    {
+      "id": "4c7da93924b2",
+      "kind": "cron",
+      "name": "THRONE_Evolution_Loop",
+      "enabled": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 60,
+        "display": "every 60m"
+      },
+      "model": "starscream-64k",
+      "provider": "ollama-launch",
+      "failure_streak": 0,
+      "last_error": "",
+      "no_agent": false
+    },
+    {
+      "id": "580345a52e26",
+      "kind": "cron",
+      "name": "Tailnet_Inventory_Sync",
+      "enabled": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 360,
+        "display": "every 360m"
+      },
+      "model": null,
+      "provider": null,
+      "failure_streak": 1,
+      "last_error": "Script exited with code 1\nstdout:\n[ERROR] No valid Tailscale API key found.",
+      "no_agent": true
+    },
+    {
+      "id": "throttle15",
+      "kind": "cron",
+      "name": "Throttle_Audit",
+      "enabled": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 15,
+        "display": "every 15m"
+      },
+      "model": null,
+      "provider": null,
+      "failure_streak": 0,
+      "last_error": "",
+      "no_agent": true
+    },
+    {
+      "id": "memhyg1d",
+      "kind": "cron",
+      "name": "Memory_Hygiene",
+      "enabled": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 1440,
+        "display": "every 1440m"
+      },
+      "model": null,
+      "provider": null,
+      "failure_streak": 0,
+      "last_error": "",
+      "no_agent": true
+    },
+    {
+      "id": "ollbeat5",
+      "kind": "cron",
+      "name": "Ollama_Health_Beat",
+      "enabled": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
+      "model": null,
+      "provider": null,
+      "failure_streak": 2,
+      "last_error": "Script exited with code 1\nstdout:\n{\n  \"ts\": 1792812852.4073815,\n  \"ollama_http\": true,\n  \"ollama_models\": 36,\n  \"cpu\": 1",
+      "no_agent": true
+    }
+  ],
+  "scripts": [
+    {
+      "id": "_health_probe.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\_health_probe.py",
+      "lines": 43,
+      "hash": "dd0d3dc0bd6ca43e",
+      "purpose": "health"
+    },
+    {
+      "id": "_run_wd.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\_run_wd.py",
+      "lines": 13,
+      "hash": "ac6d4013821b882f",
+      "purpose": "health"
+    },
+    {
+      "id": "debug_nexus_restart.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\debug_nexus_restart.py",
+      "lines": 60,
+      "hash": "5abbd84ad6e72997",
+      "purpose": "memory"
+    },
+    {
+      "id": "evolution_scout.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\evolution_scout.py",
+      "lines": 165,
+      "hash": "50c87a0a2aa5ff63",
+      "purpose": "evolution"
+    },
+    {
+      "id": "final_patch_script.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\final_patch_script.py",
+      "lines": 53,
+      "hash": "d1e3098d772b5cac",
+      "purpose": "network"
+    },
+    {
+      "id": "hh.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\hh.py",
+      "lines": 96,
+      "hash": "1242d191627fd3dd",
+      "purpose": "health"
+    },
+    {
+      "id": "hh2.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\hh2.py",
+      "lines": 43,
+      "hash": "dd0d3dc0bd6ca43e",
+      "purpose": "health"
+    },
+    {
+      "id": "list-orders.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\list-orders.py",
+      "lines": 69,
+      "hash": "4c8476424ef68256",
+      "purpose": "utility"
+    },
+    {
+      "id": "manual_outreach.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\manual_outreach.py",
+      "lines": 93,
+      "hash": "4d983cf467c99d7f",
+      "purpose": "utility"
+    },
+    {
+      "id": "mem_guard.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\mem_guard.py",
+      "lines": 62,
+      "hash": "c7ebbeff3c10794a",
+      "purpose": "memory"
+    },
+    {
+      "id": "memory-promoter.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\memory-promoter.py",
+      "lines": 110,
+      "hash": "52f8bddbabc90bb3",
+      "purpose": "memory"
+    },
+    {
+      "id": "memory_safety_check.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\memory_safety_check.py",
+      "lines": 20,
+      "hash": "33f343af20e7b5cc",
+      "purpose": "memory"
+    },
+    {
+      "id": "ollama-health.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\ollama-health.py",
+      "lines": 64,
+      "hash": "47c9c623a8d27e21",
+      "purpose": "health"
+    },
+    {
+      "id": "ollama-server.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\ollama-server.py",
+      "lines": 95,
+      "hash": "8f6c9566cbd1ac06",
+      "purpose": "health"
+    },
+    {
+      "id": "order-digest.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\order-digest.py",
+      "lines": 119,
+      "hash": "014121234532d7f2",
+      "purpose": "utility"
+    },
+    {
+      "id": "restart_nexus.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\restart_nexus.py",
+      "lines": 93,
+      "hash": "7837f44c19473673",
+      "purpose": "health"
+    },
+    {
+      "id": "robust_nexus_sync.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\robust_nexus_sync.py",
+      "lines": 49,
+      "hash": "b3752b89c0d7ed73",
+      "purpose": "memory"
+    },
+    {
+      "id": "run_throne_health.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\run_throne_health.py",
+      "lines": 14,
+      "hash": "f59be9fb804fc61a",
+      "purpose": "health"
+    },
+    {
+      "id": "shop-launcher.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\shop-launcher.py",
+      "lines": 69,
+      "hash": "b729cf5f74c1d52f",
+      "purpose": "utility"
+    },
+    {
+      "id": "shop_bot.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\shop_bot.py",
+      "lines": 328,
+      "hash": "7b6fc47ddb219f34",
+      "purpose": "utility"
+    },
+    {
+      "id": "shop_server.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\shop_server.py",
+      "lines": 544,
+      "hash": "e6b693c500025f62",
+      "purpose": "health"
+    },
+    {
+      "id": "simple_merger.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\simple_merger.py",
+      "lines": 8,
+      "hash": "2d6ce4f4c810ba56",
+      "purpose": "backup"
+    },
+    {
+      "id": "start_tesseract.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\start_tesseract.py",
+      "lines": 94,
+      "hash": "9047c729c67fd5bb",
+      "purpose": "health"
+    },
+    {
+      "id": "tailnet_sync.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\tailnet_sync.py",
+      "lines": 134,
+      "hash": "b858f68e6c90809c",
+      "purpose": "network"
+    },
+    {
+      "id": "telegram_alert.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\telegram_alert.py",
+      "lines": 63,
+      "hash": "9206951d59c12d9d",
+      "purpose": "utility"
+    },
+    {
+      "id": "tesseract_evo_logger.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\tesseract_evo_logger.py",
+      "lines": 19,
+      "hash": "10b93de0752c00fd",
+      "purpose": "evolution"
+    },
+    {
+      "id": "throne_discovery.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throne_discovery.py",
+      "lines": 827,
+      "hash": "93b6ea5f309c13e7",
+      "purpose": "memory"
+    },
+    {
+      "id": "throne_evolution.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throne_evolution.py",
+      "lines": 11,
+      "hash": "502a78327defc94a",
+      "purpose": "evolution"
+    },
+    {
+      "id": "throne_health.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throne_health.py",
+      "lines": 96,
+      "hash": "1242d191627fd3dd",
+      "purpose": "health"
+    },
+    {
+      "id": "throne_inventory_updater.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throne_inventory_updater.py",
+      "lines": 54,
+      "hash": "b0614cdffffb3dc7",
+      "purpose": "network"
+    },
+    {
+      "id": "throne_watchdog.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throne_watchdog.py",
+      "lines": 36,
+      "hash": "f954dfcbb1d00758",
+      "purpose": "health"
+    },
+    {
+      "id": "throttle-audit.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throttle-audit.py",
+      "lines": 158,
+      "hash": "18f62c5719a56e14",
+      "purpose": "memory"
+    },
+    {
+      "id": "watchdog.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\watchdog.py",
+      "lines": 297,
+      "hash": "666512156d512449",
+      "purpose": "health"
+    },
+    {
+      "id": "workspace-watchdog.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\workspace-watchdog.py",
+      "lines": 72,
+      "hash": "09d3ef38c624c429",
+      "purpose": "health"
+    },
+    {
+      "id": "world_scraper.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\world_scraper.py",
+      "lines": 39,
+      "hash": "498ba38f28b5d5ed",
+      "purpose": "health"
+    },
+    {
+      "id": "wrap-formatprice.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\wrap-formatprice.py",
+      "lines": 23,
+      "hash": "26a5d84b3b6c67de",
+      "purpose": "utility"
+    }
+  ],
+  "mcp_servers": [
+    {
+      "id": "bot-team",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\bot-team"
+    },
+    {
+      "id": "cia_research",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\cia_research"
+    },
+    {
+      "id": "elevenlabs",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\elevenlabs"
+    },
+    {
+      "id": "ffmpeg",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\ffmpeg"
+    },
+    {
+      "id": "github",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\github"
+    },
+    {
+      "id": "hf",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\hf"
+    },
+    {
+      "id": "n8n",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\n8n"
+    },
+    {
+      "id": "notion",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\notion"
+    },
+    {
+      "id": "secrets",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\secrets"
+    },
+    {
+      "id": "stripe",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\stripe"
+    },
+    {
+      "id": "tailscale",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\tailscale"
+    },
+    {
+      "id": "telegram",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\telegram"
+    },
+    {
+      "id": "throne",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\throne"
+    },
+    {
+      "id": "twilio",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\twilio"
+    },
+    {
+      "id": "youtubedl",
+      "kind": "mcp-server",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\mcp\\youtubedl"
+    }
+  ],
+  "prior_attempts": [
+    {
+      "id": "darwinian_evolver",
+      "kind": "prior-attempt",
+      "path": "E:\\ultron-memory\\darwinian_evolver",
+      "exists": true,
+      "note": "population/mutation engine (imbue-ai), git-tracked",
+      "files": 7178
+    },
+    {
+      "id": "legacy_prompt_evolution",
+      "kind": "prior-attempt",
+      "path": "C:\\Users\\KING\\Projects\\evolution",
+      "exists": true,
+      "note": "prompt evolution vs LM Studio :1234 (endpoint retired)",
+      "files": 5
+    }
+  ],
+  "duplicates": [
+    {
+      "exact_duplicates": [
+        {
+          "hash": "dd0d3dc0bd6ca43e",
+          "files": [
+            "_health_probe.py",
+            "hh2.py"
+          ]
+        },
+        {
+          "hash": "1242d191627fd3dd",
+          "files": [
+            "hh.py",
+            "throne_health.py"
+          ]
+        }
+      ],
+      "purpose_clusters": [
+        {
+          "purpose": "health",
+          "files": [
+            "_health_probe.py",
+            "_run_wd.py",
+            "hh.py",
+            "hh2.py",
+            "ollama-health.py",
+            "ollama-server.py",
+            "restart_nexus.py",
+            "run_throne_health.py",
+            "shop_server.py",
+            "start_tesseract.py",
+            "throne_health.py",
+            "throne_watchdog.py",
+            "watchdog.py",
+            "workspace-watchdog.py",
+            "world_scraper.py"
+          ],
+          "count": 15
+        },
+        {
+          "purpose": "memory",
+          "files": [
+            "debug_nexus_restart.py",
+            "mem_guard.py",
+            "memory-promoter.py",
+            "memory_safety_check.py",
+            "robust_nexus_sync.py",
+            "throne_discovery.py",
+            "throttle-audit.py"
+          ],
+          "count": 7
+        },
+        {
+          "purpose": "utility",
+          "files": [
+            "list-orders.py",
+            "manual_outreach.py",
+            "order-digest.py",
+            "shop-launcher.py",
+            "shop_bot.py",
+            "telegram_alert.py",
+            "wrap-formatprice.py"
+          ],
+          "count": 7
+        },
+        {
+          "purpose": "evolution",
+          "files": [
+            "evolution_scout.py",
+            "tesseract_evo_logger.py",
+            "throne_evolution.py"
+          ],
+          "count": 3
+        },
+        {
+          "purpose": "network",
+          "files": [
+            "final_patch_script.py",
+            "tailnet_sync.py",
+            "throne_inventory_updater.py"
+          ],
+          "count": 3
+        }
+      ]
+    }
+  ],
+  "profile_duplicates": [
+    {
+      "skill": "nexus-core",
+      "profiles": [
+        "default",
+        "vision"
+      ]
+    }
+  ],
+  "verdicts": [
+    {
+      "id": "1password",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "3-statement-model",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "agentmail",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "alchemy_forensics",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "antigravity-cli",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "apple",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "audio-tts-orchestrator",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "autonomous-ai-agents",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "axolotl",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "bioinformatics",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "blackbox",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "blender-mcp",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "bot-team",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "cia-research",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "code-review-light",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "creative",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "devops",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "elevenlabs-personal-voice",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "email",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "esoteric-corpus-research",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "evolutionary-loops",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "github",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "hf-models",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "ibm-watsonx",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "infrastructure",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "mainframe-bootstrap",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "media",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "memory-promoter",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "metasploit-operations",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "mlops",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "note-taking",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "notion-ops",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "obsidian-graph-view",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "productivity",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "public-tunnel-for-apps",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "research",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "security",
+      "verdict": "REPAIR",
+      "reason": "no SKILL.md \u2014 cannot be loaded"
+    },
+    {
+      "id": "smart-home",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "social-media",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "software-development",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "telegram-3bot-blast",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "telegram-export-analysis",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "tesseract-visual-verify",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "throne-mcp-toolkit",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "throttle-cleanup",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "video",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "web",
+      "verdict": "KEEP",
+      "reason": "category container"
+    },
+    {
+      "id": "web-development",
+      "verdict": "REPAIR",
+      "reason": "no SKILL.md \u2014 cannot be loaded"
+    },
+    {
+      "id": "b7da3fe7e86e",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "12162398f6f1",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "cb73e3a6531b",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "4c7da93924b2",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "580345a52e26",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "throttle15",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "memhyg1d",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "ollbeat5",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "_health_probe.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "_run_wd.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "debug_nexus_restart.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "evolution_scout.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "final_patch_script.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "hh.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "hh2.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "list-orders.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "manual_outreach.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "mem_guard.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "memory-promoter.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "memory_safety_check.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "ollama-health.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "ollama-server.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "order-digest.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "restart_nexus.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "robust_nexus_sync.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "run_throne_health.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "shop-launcher.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "shop_bot.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "shop_server.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "simple_merger.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "start_tesseract.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "tailnet_sync.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "telegram_alert.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "tesseract_evo_logger.py",
+      "verdict": "MERGE",
+      "reason": "overlaps the evolution stack \u2014 fold into evo/"
+    },
+    {
+      "id": "throne_discovery.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "throne_evolution.py",
+      "verdict": "MERGE",
+      "reason": "overlaps the evolution stack \u2014 fold into evo/"
+    },
+    {
+      "id": "throne_health.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "throne_inventory_updater.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "throne_watchdog.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "throttle-audit.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "watchdog.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "workspace-watchdog.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "world_scraper.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "wrap-formatprice.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "nexus-core",
+      "verdict": "DUPLICATE",
+      "reason": "present in profiles: default, vision"
+    }
+  ]
+}
