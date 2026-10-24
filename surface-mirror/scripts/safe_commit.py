@@ -24,12 +24,49 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 NEVER_STAGE = {".env", ".env.oprefs", "secrets.json", "credentials.json"}
+# A commit is a publication event. A file carrying a secret-shaped value
+# must not be committed to a repository that is pushed anywhere public.
+SECRET_NAME = re.compile(
+    r"(?i)(pass(word|wd)?|secret|token|api[_-]?key|apikey|access[_-]?key|"
+    r"private[_-]?key|encryption[_-]?key|credential|auth[_-]?key|client[_-]?secret)")
+SECRET_VALUE = re.compile(
+    r"(AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|"
+    r"sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{30,}|eyJ[A-Za-z0-9_-]{8,}\.|"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\b[0-9a-fA-F]{32,64}\b|"
+    r"\b[A-Za-z0-9+/]{32,}={0,2}\b)")
+ASSIGN_LINE = re.compile(r"(?i)([A-Za-z_][A-Za-z0-9_.\-]{1,48})\s*[=:]\s*['\"]?([^\s'\"',;#}\]]{6,200})")
+
+
+def secret_lines(path: Path) -> list[str]:
+    """Lines in a file that carry a secret-shaped value (values never returned)."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return []
+    hits = []
+    for i, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith(("#", "//", "REM ", "*")):
+            continue
+        for m in ASSIGN_LINE.finditer(line):
+            name, value = m.group(1), m.group(2)
+            if not SECRET_NAME.search(name):
+                continue
+            if value.strip().lower() in {"changeme", "redacted", "placeholder", "none", "true", "false"}:
+                continue
+            if value.startswith(("%", "$", "{", "op://")):
+                continue
+            if SECRET_VALUE.search(value):
+                hits.append(f"{path.name}:{i} {name}")
+                break
+    return hits
 SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache",
              "Library", "Temp", "obj", "bin", "build"}
 
@@ -97,6 +134,18 @@ def main() -> int:
         if skipped:
             print(f"safe_commit: {len(skipped)} file(s) skipped as secrets/build output")
         return 0
+
+    secret_hits = []
+    for p in changed:
+        secret_hits.extend(secret_lines(p))
+    if secret_hits and not args.force:
+        print("safe_commit: REFUSING - these files contain secret-shaped values:",
+              file=sys.stderr)
+        for h in secret_hits:
+            print("  " + h, file=sys.stderr)
+        print("safe_commit: move the secret into 1Password and read it at run time. "
+              "Pass --force only if you are certain these are not secrets.", file=sys.stderr)
+        return 1
 
     moving = _in_motion(changed, args.min_age)
     if moving and not args.force:

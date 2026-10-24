@@ -360,6 +360,35 @@ def check_stack_self() -> list[Check]:
     return [Check("stack:archive", "evolution", 4.0, ok, detail, time.time() - t0)]
 
 
+def check_no_published_secrets() -> list[Check]:
+    """No secret-shaped value may sit in the publishing surfaces.
+
+    The mirror is pushed to a public repository, and so are the managed
+    repos. A secret in either is a published secret. This check is
+    gate-actionable on purpose: the fix is to move the secret into
+    1Password and read it at run time.
+    """
+    t0 = time.time()
+    from .secrets import scan_tree
+    from . import paths
+    checks: list[Check] = []
+    surfaces = {
+        "mirror": paths.STACK / "surface-mirror",
+        "scripts": paths.SCRIPTS_DIR,
+    }
+    for label, root in surfaces.items():
+        if not root or not Path(root).exists():
+            continue
+        findings = scan_tree(root, skip_dirs={"logs", "cache", "__pycache__"})
+        checks.append(Check(
+            f"secrets:{label}", "secrets", 6.0, not findings,
+            (f"clean ({root})" if not findings else
+             f"{len(findings)} secret-shaped value(s): " +
+             "; ".join(sorted({f.name for f in findings})[:4])),
+            time.time() - t0))
+    return checks
+
+
 # ------------------------------------------------------------------ runner ---
 def run() -> Scorecard:
     checks: list[Check] = []
@@ -367,6 +396,7 @@ def run() -> Scorecard:
         check_services, check_nexus_api, check_ollama_api, check_skills,
         check_scripts_compile, check_cron, check_config, check_memory,
         check_repos, check_scout, check_learning, check_stack_self,
+        check_no_published_secrets,
     ):
         try:
             res = fn()
