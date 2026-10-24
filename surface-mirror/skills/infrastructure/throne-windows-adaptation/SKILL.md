@@ -413,6 +413,22 @@ Strip the env when spawning services too (`clean_env()` in
 `evo/services.py`, `child_env()` in `run_nexus.py`, `server_env()` in
 TESSERACT `start.py`) so the guard is defence in depth.
 
+## Launching a long-lived service
+
+A service launcher must return as soon as the service is healthy, and must
+**not leave the caller waiting on the service**. A child created with
+inheritable handles inherits the caller's stdout pipe, so the caller blocks
+in `read()` until the *service* exits — measured on THRONE: `cmd start` HELD
+the pipe, PowerShell `Start-Process` HELD it, Python `Popen(close_fds=True)`
+RELEASED it. Spawn services with `spawn_detached.py`, probe health with
+`probe_http.py` rather than `Invoke-WebRequest` (PowerShell startup is
+charged to the wait budget), and use the absolute
+`"%SystemRoot%\System32\timeout.exe"` — a bare `timeout /t` resolves to GNU
+coreutils under an MSYS PATH and the wait silently returns instantly.
+
+Full contract, evidence and verification recipe in
+`references/launcher-contract.md`.
+
 ## Quick recovery checklist
 1. `hermes gateway start`
 2. Retarget any cron still on nous/z-ai to ollama-launch
