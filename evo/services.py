@@ -34,6 +34,7 @@ class Service:
     start_type: str        # cmd | script | app | none | unknown
     start_path: str | None
     start_args: str | None
+    start_interpreter: str | None  # explicit interpreter for script starts
     health: str | None
     critical: bool
     notes: str
@@ -67,6 +68,7 @@ def load() -> list[Service]:
                     start_type=start.get("type", "none"),
                     start_path=start.get("path"),
                     start_args=start.get("args"),
+                    start_interpreter=start.get("interpreter"),
                     health=s.get("health"),
                     critical=bool(s.get("critical", False)),
                     notes=s.get("notes", ""),
@@ -77,7 +79,8 @@ def load() -> list[Service]:
     # fallback: built-in map, everything operator-level
     for name, port in paths.CANONICAL_SERVICES.items():
         svc.append(Service(name=name, port=port, status="up", start_type="none",
-                           start_path=None, start_args=None, health=None,
+                           start_path=None, start_args=None,
+                           start_interpreter=None, health=None,
                            critical=False, notes="fallback: no registry"))
     return svc
 
@@ -116,7 +119,13 @@ def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              creationflags=0x08000000)  # DETACHED_PROCESS
         else:  # python script
-            subprocess.Popen(["python", str(p)], cwd=str(p.parent),
+            # Some services need a specific interpreter: NEXUS only works on
+            # the uv venv that has numpy + chromadb installed, and it must
+            # run under its supervisor (run_nexus.py) so a crash self-heals.
+            interpreter = s.start_interpreter or "python"
+            if not Path(interpreter).exists():
+                return False, f"interpreter missing: {interpreter}"
+            subprocess.Popen([interpreter, str(p)], cwd=str(p.parent),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              creationflags=0x08000000)
     except Exception as e:
@@ -143,6 +152,7 @@ def survey(auto_heal: bool = False) -> list[dict]:
             "name": s.name, "port": s.port, "status": st, "kind": s.kind,
             "healable": s.healable, "critical": s.critical,
             "start": s.start_path, "healed": healed, "notes": s.notes[:120],
+            "interpreter": s.start_interpreter,
         })
     return out
 
