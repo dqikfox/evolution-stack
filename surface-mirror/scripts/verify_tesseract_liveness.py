@@ -1,5 +1,6 @@
-import socket
 import os
+import socket
+import time
 from pathlib import Path
 import sys
 
@@ -9,7 +10,7 @@ def main():
     Implements L24 (consecutive probes) and L13 (status file awareness).
     """
     if len(sys.argv) < 3:
-        print("Usage: verify_service.py <port> <service_name>")
+        print("Usage: verify_tesseract_liveness.py <port> <service_name>")
         sys.exit(1)
 
     target_port = int(sys.argv[1])
@@ -23,10 +24,10 @@ def main():
             if s.connect_ex(('127.0.0.1', target_port)) == 0:
                 is_port_open = True
                 break
-        else:
-            # Small sleep between retries to allow for transient network/OS jitter
-            import time
-            time.sleep(0.2)
+        # Small sleep between retries to allow for transient network/OS jitter.
+        # This must sit OUTSIDE the `with` block: a `with` statement has no
+        # `else` clause, so pairing it there is a SyntaxError.
+        time.sleep(0.2)
 
     if is_port_open:
         sys.exit(0)
