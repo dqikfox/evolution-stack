@@ -27,7 +27,7 @@ def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = [a for a in sys.argv[1:] if a.startswith("--")]
     suffixes = (".py", ".cmd", ".bat", ".ps1", ".sh", ".json", ".yaml", ".yml",
-                ".env", ".txt", ".cfg", ".ini", ".toml", ".oprefs")
+                ".env", ".txt", ".cfg", ".ini", ".toml", ".oprefs", ".md")
     for f in flags:
         if f.startswith("--suffix"):
             suffixes = tuple(f.split("=", 1)[1].split(",")) if "=" in f else suffixes

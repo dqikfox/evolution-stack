@@ -65,6 +65,14 @@ SAFE_VALUES = {
 PLACEHOLDER = re.compile(r"(?i)^(?:<[^>]*>|\{\{.*\}\}|\$[A-Z_]+|%[A-Z_]+%|\.\.\.|"
                           r"\*\*\*|redacted|placeholder|example|your[_-]?\w+|"
                           r"changeme|xxx+|todo|none|null|true|false)$")
+# a token-shaped value whose body is ONE repeated character is a
+# documentation placeholder, not a credential: `ghp_` + 20 x's matches
+# \bgh[pousr]_[A-Za-z0-9]{20,}\b perfectly, and a real token with 8+
+# identical characters in a row is astronomically unlikely (~1e-13).
+# The prefix may itself contain separators (sk-, sk-ant-, xoxb-), so allow
+# a short word-ish prefix and require the RUN of x/star characters to be
+# the tail of the value.
+REDACTION_RUN = re.compile(r"(?i)^[A-Za-z0-9._-]{0,24}(?:x{8,}|\*{8,})$")
 # a real PEM header (uppercase words only - a regex literal like
 # "-----BEGIN [A-Z ]*PRIVATE KEY-----" is not a key)
 PEM_HEADER = re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")
@@ -106,6 +114,8 @@ def _value_is_secret(name: str, value: str) -> str | None:
     if len(v) < 8:
         return None
     if PLACEHOLDER.match(v):
+        return None
+    if REDACTION_RUN.match(v):
         return None
     if v.lower() in SAFE_VALUES:
         return None
@@ -175,7 +185,7 @@ DEFAULT_SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__",
 
 
 def scan_tree(root, suffixes=(".py", ".cmd", ".bat", ".ps1", ".sh", ".json", ".yaml",
-                               ".yml", ".env", ".txt", ".cfg", ".ini", ".toml"),
+                               ".yml", ".env", ".txt", ".cfg", ".ini", ".toml", ".md"),
               skip_dirs=None, max_files: int = 20000) -> list[Finding]:
     """Walk a tree and report secret-looking assignments.
 
