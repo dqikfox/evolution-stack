@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import socket
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -103,6 +104,23 @@ def status_of(s: Service) -> str:
     return "down"
 
 
+def clean_env() -> dict:
+    """Environment for a spawned service: the agent's own paths stripped.
+
+    The Hermes agent runtime injects PYTHONPATH into every child it spawns,
+    pointing at the agent's interpreter directories. A service that then
+    starts a project virtualenv resolves the AGENT's numpy/pydantic/fastapi
+    instead of the project's own, which is how a test suite ends up
+    validating against dependency versions the project does not ship.
+
+    Strip it here so every service starts on its own interpreter's packages.
+    """
+    env = os.environ.copy()
+    for var in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP"):
+        env.pop(var, None)
+    return env
+
+
 def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
     """Launch the documented start path and wait for the port to answer."""
     if not s.healable:
@@ -111,13 +129,14 @@ def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
     if not p.exists():
         return False, f"start path missing: {p}"
     try:
+        env = clean_env()
         if s.start_type == "cmd":
             args = ["cmd", "/c", str(p)]
             if s.start_args:
                 args.append(s.start_args)
             subprocess.Popen(args, cwd=str(p.parent),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            close_fds=True,
+            close_fds=True, env=env,
                              creationflags=0x08000000)  # DETACHED_PROCESS
         else:  # python script
             # Some services need a specific interpreter: NEXUS only works on
@@ -128,7 +147,7 @@ def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
                 return False, f"interpreter missing: {interpreter}"
             subprocess.Popen([interpreter, str(p)], cwd=str(p.parent),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            close_fds=True,
+            close_fds=True, env=env,
                              creationflags=0x08000000)
     except Exception as e:
         return False, f"launch failed: {e}"
