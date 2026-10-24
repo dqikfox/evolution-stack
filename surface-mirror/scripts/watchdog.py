@@ -17,7 +17,11 @@ OUT_DIR = Path(os.environ["LOCALAPPDATA"]) / "hermes" / "cron" / "output"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 STATE_PATH = OUT_DIR / "health_state.json"
 LOG_PATH = OUT_DIR / "health.log"
-RESTART_NEXUS = Path(os.environ["LOCALAPPDATA"]) / "hermes" / "scripts" / "restart_nexus.py"
+# One canonical heal path for NEXUS: the idempotent launcher that starts the
+# supervisor. The old restart_nexus.py killed the process by PID and used
+# the repo .venv, which has a broken numpy - it would have brought NEXUS
+# back *without* a vector store, and it fought the supervisor for the port.
+RESTART_NEXUS = Path(os.environ["LOCALAPPDATA"]) / "hermes" / "scripts" / "start_nexus.cmd"
 
 PORTS = {
     "ollama": 11434,
@@ -76,13 +80,16 @@ def heal_nexus() -> dict:
     if not RESTART_NEXUS.exists():
         return {"attempted": False, "error": "restart_nexus.py missing"}
     try:
+        # The launcher is idempotent: it starts the supervisor only when the
+        # service is not already answering, and the supervisor owns its own
+        # restarts from there.
         out = subprocess.check_output(
-            [sys.executable, str(RESTART_NEXUS)],
+            ["cmd", "/c", str(RESTART_NEXUS)],
             text=True,
-            timeout=120,
+            timeout=180,
             stderr=subprocess.STDOUT,
         )
-        ok = "result OK" in out or "health_ok" in out
+        ok, body = http_ok("http://127.0.0.1:8650/health", timeout=8.0)
         return {"attempted": True, "ok": ok, "tail": out[-500:]}
     except Exception as e:
         return {"attempted": True, "ok": False, "error": str(e)}
