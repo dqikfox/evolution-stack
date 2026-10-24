@@ -41,7 +41,10 @@ def main(argv: list[str]) -> int:
     while True:
         attempts += 1
         try:
-            with urllib.request.urlopen(url, timeout=max(interval, 2.0)) as r:
+            # The per-attempt timeout must be comfortably LONGER than the
+            # service's own response time, or a slow-but-healthy service is
+            # declared dead on every attempt.
+            with urllib.request.urlopen(url, timeout=max(interval, 5.0)) as r:
                 if r.status == 200:
                     print(f"up after {attempts} attempt(s): {url}")
                     return 0

@@ -74,11 +74,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [heretik] waiting for :%[A-Z_]+%...
+echo [heretik] waiting for :%HERETIK_PORT%...
 "%HERETIK_PY%" "%WAITER%" "%HERETIK_HEALTH%" 180 2
 if errorlevel 1 (
     echo [heretik] FAILED: the endpoint did not answer within 180s - see the log
     exit /b 1
 )
-echo [heretik] up on :%[A-Z_]+%
+echo [heretik] up on :%HERETIK_PORT%
 exit /b 0

@@ -10,6 +10,15 @@ port per the port map - check PORT_MAP.json/netstat first), idle timeout.
 Deploy: kill the always-on backend, start this proxy in its place (background,
 logon-autostart), clients need zero changes. Probe: GET /__demand_status on the
 contract port.
+
+Four rules the implementation MUST keep:
+  1. /health is answered BY THE PROXY, from cached state, in milliseconds. A
+     forwarded /health cold-starts the backend for a monitor's probe and keeps
+     it resident forever.
+  2. Only INFERENCE traffic refreshes the idle timer.
+  3. A backend orphaned by a proxy restart is ADOPTED by PID (verified against
+     the expected command line) so the reaper can release it.
+  4. The idle reaper kills by PID, not only by the Popen handle it owns.
 """
 import http.server
 import json
@@ -66,12 +75,25 @@ def log(msg: str) -> None:
     print(line, flush=True)
 
 
-def backend_healthy() -> bool:
+# The last known state of the backend, maintained by the proxy itself.
+# /health reports THIS instead of probing: on a host whose firewall DROPs
+# packets to unbound ports (rather than refusing them), a probe of an absent
+# backend blocks for the full socket timeout, and a health endpoint that
+# takes two seconds is a health endpoint that breaks every waiter with a
+# shorter per-attempt timeout.
+backend_state = {"running": False, "pid": None, "checked": 0.0}
+
+
+def backend_healthy(timeout: float = 0.5) -> bool:
+    """Is the backend up? Short timeout on purpose - see backend_state."""
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{BACKEND_PORT}/health", timeout=2) as r:
-            return r.status == 200
+        with urllib.request.urlopen(f"http://127.0.0.1:{BACKEND_PORT}/health", timeout=timeout) as r:
+            ok = r.status == 200
     except (urllib.error.URLError, OSError):
-        return False
+        ok = False
+    backend_state["running"] = ok
+    backend_state["checked"] = time.time()
+    return ok
 
 
 def _port_owner_pid(port: int):
@@ -159,6 +181,8 @@ def start_backend() -> bool:
                 return False
             if backend_healthy():
                 backend_pid = backend_proc.pid
+                backend_state["running"] = True
+                backend_state["pid"] = backend_proc.pid
                 log(f"backend ready in {time.time()-t0:.1f}s (pid {backend_proc.pid})")
                 return True
             time.sleep(0.5)
@@ -207,6 +231,8 @@ def stop_backend() -> None:
                 log(f"idle timeout: stopping adopted backend pid {backend_pid}")
                 _terminate_pid(backend_pid)
             backend_pid = None
+        backend_state["running"] = False
+        backend_state["pid"] = None
         log("backend stopped - RAM released")
 
 
@@ -246,11 +272,13 @@ class Proxy(http.server.BaseHTTPRequestHandler):
         answer a monitor's probe, and would refresh the idle timer so the
         backend could never be released.
         """
+        # Cached state, not a live probe: this endpoint must answer in
+        # milliseconds and must never start anything.
         self._json(200, {
             "status": "ok",
             "proxy": "up",
-            "backend_running": backend_healthy(),
-            "backend_pid": backend_pid or (backend_proc.pid if backend_proc else None),
+            "backend_running": bool(backend_state["running"]),
+            "backend_pid": backend_state.get("pid") or backend_pid or (backend_proc.pid if backend_proc else None),
             "idle_seconds_left": max(0, int(IDLE_TIMEOUT - (time.time() - last_used))),
         })
 
@@ -295,8 +323,8 @@ class Proxy(http.server.BaseHTTPRequestHandler):
         if self.path == "/__demand_status":
             self._json(200, {
                 "proxy": "up",
-                "backend_running": backend_healthy(),
-                "backend_pid": backend_pid or (backend_proc.pid if backend_proc else None),
+                "backend_running": bool(backend_state["running"]),
+                "backend_pid": backend_state.get("pid") or backend_pid or (backend_proc.pid if backend_proc else None),
                 "idle_seconds_left": max(0, int(IDLE_TIMEOUT - (time.time() - last_used))),
             })
             return

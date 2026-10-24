@@ -73,11 +73,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [tesseract] waiting for :%[A-Z_]+%...
+echo [tesseract] waiting for :%TESS_PORT%...
 "%TESS_PY%" "%WAITER%" "%TESS_HEALTH%" 180 2
 if errorlevel 1 (
     echo [tesseract] FAILED: the endpoint did not answer within 180s - see the log
     exit /b 1
 )
-echo [tesseract] up on :%[A-Z_]+%
+echo [tesseract] up on :%TESS_PORT%
 exit /b 0
