@@ -1,0 +1,20 @@
+0.00.145.123 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.145.557 W srv  llama_server: -----------------
+0.00.145.564 W srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+0.00.145.565 W srv  llama_server: this can be a security risk (cross-origin attacks)
+0.00.145.565 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+0.00.145.566 W srv  llama_server: -----------------
+0.00.150.159 I srv    load_model: loading model 'D:\ai\models\Mistral-7B-Instruct-v0.3-Q4_K_M.gguf'
+0.03.192.399 I cmn          init: llama threadpool init, n_threads = 8
+0.03.278.052 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 8192, kv_unified = 'true'
+0.03.282.698 I srv  llama_server: model loaded
+0.03.282.707 I srv  llama_server: listening on http://127.0.0.1:8080
+0.03.282.707 W srv  llama_server: NOTICE: server default port will be changed to :9931 in a future release
+0.03.282.708 W srv  llama_server:         ref: https://github.com/ggml-org/llama.cpp/pull/26508
+1.21.598.789 I slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1
+1.21.598.822 I slot launch_slot_: id  3 | task 0 | processing task, is_child = 0
+1.21.690.449 I slot print_timing: id  3 | task 0 | prompt eval time =      38.07 ms /    15 tokens (    2.54 ms per token,   393.99 tokens per second)
+1.21.690.458 I slot print_timing: id  3 | task 0 |        eval time =      53.49 ms /     6 tokens (   10.70 ms per token,    93.48 tokens per second)
+1.21.690.460 I slot print_timing: id  3 | task 0 |       total time =      91.56 ms /    21 tokens
+1.21.690.461 I slot print_timing: id  3 | task 0 |    graphs reused =          5
+1.21.690.490 I slot      release: id  3 | task 0 | stop processing: n_tokens = 20, truncated = 0

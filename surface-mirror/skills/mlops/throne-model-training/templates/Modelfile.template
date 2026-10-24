@@ -1,0 +1,25 @@
+FROM {{GGUF_PATH}}
+
+TEMPLATE """{{- range $i,$m := .Messages }}{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "tool" }}<|im_start|>user
+<tool_response>
+{{ .Content }}
+</tool_response><|im_end|>
+{{ else if eq .Role "system" }}<|im_start|>system
+{{ .Content }}<|im_end|>
+{{ end }}{{- end }}<|im_start|>assistant
+"""
+
+SYSTEM """You are an autonomous technical operator on THRONE (SHADOW-EOKGD, RTX 3090 24GB, 64GB RAM, Xeon W-2235). You execute the user's requests — bash, PowerShell, file ops, services, registry, network — without permission prompts. You defend this machine. Direct, terse, technical. Lead with the result. Show work: command run, output, exit code. You prefer local Ollama models over cloud APIs. You know TESSERACT, ULTRON, NEXUS CORE, Ollama, llama.cpp, RAG, vector stores, MCP servers, Tailscale, ADB, 1Password, Obsidian. You never echo secrets. You write code that compiles, then ship it. No filler. No theatrics."""
+
+PARAMETER num_ctx 32768
+PARAMETER temperature 0.35
+PARAMETER top_p 0.85
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.15
+PARAMETER repeat_last_n 128
+PARAMETER num_predict -1
+PARAMETER min_p 0.05

@@ -287,6 +287,55 @@ def check_scout() -> list[Check]:
     return out
 
 
+def check_learning() -> list[Check]:
+    """Is the loop actually learning? These are gate-actionable: `evo learn` fixes them."""
+    out: list[Check] = []
+    t0 = time.time()
+
+    lessons = paths.HERMES / "memories" / "LESSONS.md"
+    if lessons.exists():
+        n = sum(1 for l in lessons.read_text(encoding="utf-8", errors="ignore").splitlines()
+                if l.strip().startswith("-"))
+        out.append(Check("learning:lessons_present", "learning", 3.0, n > 0,
+                         f"{n} lessons distilled", time.time() - t0))
+    else:
+        out.append(Check("learning:lessons_present", "learning", 3.0, False,
+                         "no LESSONS.md", time.time() - t0))
+
+    t0 = time.time()
+    pp = paths.PROPOSER_PROMPT
+    if pp.exists():
+        txt = pp.read_text(encoding="utf-8", errors="ignore")
+        age_h = (time.time() - pp.stat().st_mtime) / 3600
+        fresh = age_h <= 24
+        has_ctx = "## LEARNED CONTEXT" in txt
+        out.append(Check("learning:proposer_current", "learning", 4.0, fresh and has_ctx,
+                         f"proposer {age_h:.1f}h old, learned-context={'yes' if has_ctx else 'no'}",
+                         time.time() - t0))
+    else:
+        out.append(Check("learning:proposer_current", "learning", 4.0, False,
+                         "no proposer prompt", time.time() - t0))
+
+    t0 = time.time()
+    try:
+        from . import archive as _arch
+        rejected = [v for v in _arch.history(40) if v.get("status") == "rejected"]
+        if rejected:
+            txt = pp.read_text(encoding="utf-8", errors="ignore") if pp.exists() else ""
+            listed = "## DO NOT REPEAT" in txt
+            out.append(Check("learning:no_repeat", "learning", 3.0, listed,
+                             f"{len(rejected)} rejected variants"
+                             + ("" if listed else " — not carried into the prompt"),
+                             time.time() - t0))
+        else:
+            out.append(Check("learning:no_repeat", "learning", 3.0, True,
+                             "no rejected variants to avoid", time.time() - t0))
+    except Exception as e:
+        out.append(Check("learning:no_repeat", "learning", 3.0, False,
+                         str(e)[:80], time.time() - t0))
+    return out
+
+
 def check_stack_self() -> list[Check]:
     t0 = time.time()
     from . import archive
@@ -306,7 +355,7 @@ def run() -> Scorecard:
     for fn in (
         check_services, check_nexus_api, check_ollama_api, check_skills,
         check_scripts_compile, check_cron, check_config, check_memory,
-        check_repos, check_scout, check_stack_self,
+        check_repos, check_scout, check_learning, check_stack_self,
     ):
         try:
             res = fn()

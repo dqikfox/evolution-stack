@@ -53,7 +53,15 @@ def _extract_json(text: str) -> dict | None:
 
 
 def best_proposer_prompt() -> str:
-    """The highest-scoring proposer prompt, else the seed."""
+    """The proposer prompt that carries the most learning.
+
+    Priority: the live file written by `evo learn` (it embeds the evidence
+    brief) -> the best-scoring archived proposer -> the seed.
+    """
+    if paths.PROPOSER_PROMPT.exists():
+        txt = paths.PROPOSER_PROMPT.read_text(encoding="utf-8", errors="ignore")
+        if "## LEARNED CONTEXT" in txt:
+            return txt
     best = archive.best_variant(target="proposer_prompt")
     if best and best.get("diff"):
         return best["diff"]

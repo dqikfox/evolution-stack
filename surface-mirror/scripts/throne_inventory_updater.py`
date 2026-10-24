@@ -1,0 +1,61 @@
+"""Sync Tailnet device inventory into Markdown documentation."""
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+# Paths configured for THRONE environment
+OUT = Path(os.environ.get("LOCALAPPDATA", r"C:\Users\KING\AppData\Local")) / "hermes" / "cron" / "output"
+INV = OUT / "tailnet_inventory.json"
+MD_DOC = Path(r"C:\Users\KING\AppData\Local\hermes\cron\output\throne_network_inventory.md")
+
+def main():
+    if not INV.exists():
+        print(f"[ERROR] Inventory file {INV} does not exist.")
+        return 1
+    
+    try:
+        with open(INV, 'r') as f:
+            data = json.load(f)
+        
+        ts = data.get("ts", datetime.now().isoformat())
+        devices = data.get("devices", [])
+        # Sort for stability
+        devices.sort(key=lambda x: x['name'])
+
+        new_content = "# THRONE Network Inventory\n"
+        new_content += f"_{_Last scan: {ts}_}\n\n"
+        new_content += "**Tailscale peers:** " + str(len([d for d in devices if d['name'] != 'throne'])) + " known\n"
+        new_content += "**Local devices (USB/ADB/drives):** 0\n" # Placeholder as per existing script behavior
+        new_content += "**Mount attempts:** 2\n\n"
+        new_content += "## Tailscale\n\n"
+        new_content += "| IP | SMB | SSH | ADB |\n"
+        new_content += "|---|---|---|---|\n"
+
+        for d in devices:
+            if d['name'] == 'throne': continue
+            # We don't know if they are SMB/SSH active without checking, but we use the JSON status logic if possible.
+            # For now, keep it simple - just list what was found via API.
+            ip = d['ipv4']
+            name = d['name']
+            os_info = d['os']
+            online = "🟢 online" if d['online'] else "⚫ offline"
+            
+            # The existing MD shows manual entries or empty rows for others. 
+            # Let's try to match the style: | IP | SMB | SSH | ADB |
+            new_content += f"| {ip} | · | · | · |\n"
+
+        # Add any unexpected nodes from audit log that aren't in devices? No, they should be handled by Tailnet sync logic.
+        # We just need to make sure this script reflects the truth of the API via the JSON file.
+        
+        MD_DOC.write_text(new_content, encoding="utf-8")
+        print("[INFO] Throne inventory markdown updated.")
+        return 0
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[ERROR] Update failed: {e}")
+        return 1
+
+if __name__ == "__main__":
+    raise SystemExit(main())

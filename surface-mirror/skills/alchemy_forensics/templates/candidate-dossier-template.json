@@ -1,0 +1,91 @@
+{
+  "candidate_id": "R##",
+  "question": "What does this corpus text describe, what is the operational core, and which modern chemistry operation does it correspond to?",
+  "intended_endpoint": "The product of the operation (e.g. Sophick Mercury, Elixir, projected gold).",
+  "witnesses": [
+    "Primary source: title, edition, location, location in corpus",
+    "Secondary witness (e.g. contemporary prose source for verse text)",
+    "Critical edition or scholarly source"
+  ],
+  "passages": [
+    {
+      "passage_id": "R##-P01",
+      "question_id": "G##",
+      "source_id": "source-and-page-identifier",
+      "work": "Full title of the work",
+      "edition": "Edition used; year and publisher; PDF file path",
+      "printed_page": "Printed page number",
+      "pdf_page": "PDF leaf number",
+      "folio": "Folio or section reference",
+      "image_path": "C:/path/to/evidence/<source>-<printed-page>-pdf<leaf>.png",
+      "transcription": "Verbatim text in original spelling; use triple-quoted strings to avoid escape issues",
+      "transcription_policy": "1655 English; original spelling preserved",
+      "translation": "as transcription (or modern English translation if text is non-English)",
+      "context": "What this passage is doing in the text — narrative, prescription, allegory, comparison, etc.",
+      "statement_type": "allegory | prescription | comparison | deprecation | theory | etc.",
+      "interpretation": "Modern chemistry reading; what the operation is; what it produces",
+      "alternatives": [
+        "Alternative interpretation 1",
+        "Alternative interpretation 2"
+      ],
+      "reviewer": "THRONE/Megatron (YYYY-MM-DD)",
+      "review_date": "YYYY-MM-DD",
+      "status": "verified | partial | unverified"
+    }
+  ],
+  "materials_as_written": [
+    "Material 1 as named in the corpus (e.g. Diana = silver)",
+    "Material 2 as named in the corpus"
+  ],
+  "identity_hypotheses": [
+    {
+      "id": "H1",
+      "label": "Modern chemistry identification (e.g. silver chloride, AgCl, white curdy precipitate)",
+      "summary": "How the operation is performed in modern chemistry; what the inputs and outputs are",
+      "modern_operational_identification": "Stoichiometric equation or procedure",
+      "support": "Why this identification is consistent with the corpus text",
+      "counter": "Why this identification might be wrong"
+    }
+  ],
+  "ordered_operations": [
+    "Step 1: what the operator does first",
+    "Step 2: next step",
+    "Step N: final step"
+  ],
+  "apparatus_conditions": [
+    "Vessel type and material (e.g. round glass flask, iron alembic)",
+    "Sealing method (e.g. luted joint, ground glass)",
+    "Furnace / heat source",
+    "Time per cycle"
+  ],
+  "quantities_units_repetitions": [
+    "Quantity 1: amount + unit + repetitions (e.g. 3-4 distillations)",
+    "Quantity 2: time per cycle (e.g. half a day per Eagle)"
+  ],
+  "intermediates_and_stop_criteria": [
+    "Intermediate 1: name and physical description",
+    "Intermediate 2: name and physical description",
+    "Stop criterion: how the operator knows the step is complete"
+  ],
+  "claimed_product_and_tests": [
+    "Product: what the text claims the operation produces",
+    "Test 1: visual test the operator applies",
+    "Test 2: functional test (e.g. application to base metal)"
+  ],
+  "statement_type": "allegory + prescription + comparison + deprecation",
+  "missing_critical_information": [
+    "What the corpus does NOT say that the operator would need to know",
+    "Quantities not given; timings not given; specific minerals not named"
+  ],
+  "constraint_comparison": [
+    "C1 (constraint): verdict on consistency with the corpus text",
+    "C2 (constraint): verdict on consistency with the corpus text"
+  ],
+  "counterevidence": [
+    "Evidence against the proposed identification (e.g. pseudo-Bacon attribution, internally-inconsistent projection ratio, OCR-only confirmation)"
+  ],
+  "textual_status": "complete on R##-P## (verified passages) | partial (some passages OCR-only) | etc.",
+  "identity_status": "H1 (most-likely identification) is consistent with...; H2 is less consistent; H3 is weakened by...",
+  "efficacy_status": "unestablished for transmutation (per OPUS section 13) | established for the operational cycle | etc.",
+  "next_discriminating_check": "How to discriminate between H1, H2, H3 by modern reproduction or textual comparison"
+}

@@ -45,6 +45,32 @@ def cmd_bench(args) -> int:
     return 0 if not sc.gate_failures else 1
 
 
+def cmd_mirror(args) -> int:
+    """Mirror the improvable surface into this repo (git-tracked history)."""
+    from . import mirror
+    if args.diff:
+        _print({"drift": mirror.diff_targets()})
+        return 0
+    if args.all:
+        files = mirror.record_all()
+        _print({"mirrored": len(files)})
+        return 0
+    _print({"drift": mirror.diff_targets()})
+    return 0
+
+
+# ------------------------------------------------------------------ learn ---
+def cmd_learn(args) -> int:
+    """Refresh the proposer prompt from live learning evidence."""
+    from . import learn
+    if args.status:
+        _print(learn.status())
+        return 0
+    res = learn.refresh()
+    _print(res)
+    return 0
+
+
 # ------------------------------------------------------------------ audit ---
 def cmd_audit(args) -> int:
     js, md = consolidation.write_report()
@@ -151,7 +177,15 @@ def cmd_apply(args) -> int:
         archive.set_status(v["id"], "accepted", after.gate_score)
         archive.log_event("apply", f"accepted #{v['id']}",
                           before=before.gate_score, after=after.gate_score)
+        mirrored = ""
+        try:
+            from . import mirror
+            mirrored = mirror.record(v["target"]) or ""
+        except Exception as e:
+            mirrored = f"mirror failed: {e}"
         print(f"ACCEPTED (+{after.gate_score - before.gate_score:.2f}) — kept, snapshot {snap} retained")
+        if mirrored and not mirrored.startswith("mirror failed"):
+            print(f"mirrored -> {mirrored}")
         return 0
 
     archive.set_status(v["id"], "rejected", after.gate_score)
@@ -200,6 +234,15 @@ def cmd_cycle(args) -> int:
         except Exception as e:
             scout_out = f"scout error: {e}"
 
+    # LEARN FIRST: the proposer prompt is rebuilt from lessons + cron failures
+    # + archive history, so every cycle starts from current evidence.
+    learn_info = {}
+    try:
+        from . import learn
+        learn_info = learn.refresh()
+    except Exception as e:
+        learn_info = {"error": str(e)[:160]}
+
     sc = bench.run()
     archive.record_benchmark(sc.gate_score, len(sc.checks), len(sc.gate_failures), sc.to_dict())
 
@@ -219,6 +262,7 @@ def cmd_cycle(args) -> int:
         "gate_failed": len(sc.gate_failures),
         "failures": [{"name": c.name, "detail": c.detail} for c in sc.failures],
         "scout_findings": len(findings),
+        "learning": learn_info,
         "archive": archive.stats(),
         "stack": str(paths.STACK),
     }
@@ -237,6 +281,13 @@ def main(argv=None) -> int:
 
     b = sub.add_parser("bench"); b.add_argument("--json", action="store_true")
     b.set_defaults(func=cmd_bench)
+
+    ln = sub.add_parser("learn"); ln.add_argument("--status", action="store_true")
+    ln.set_defaults(func=cmd_learn)
+
+    mi = sub.add_parser("mirror"); mi.add_argument("--all", action="store_true")
+    mi.add_argument("--diff", action="store_true")
+    mi.set_defaults(func=cmd_mirror)
 
     a = sub.add_parser("audit"); a.add_argument("--json", action="store_true")
     a.set_defaults(func=cmd_audit)
