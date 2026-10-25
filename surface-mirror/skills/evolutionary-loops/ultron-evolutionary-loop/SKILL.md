@@ -251,7 +251,35 @@ defects found and the fixes, is in
   (`tests/test_launchers.py`), make the deadline EXCEED the implementation's
   stated budget, always restore the service, and assert exactly one supervisor
   chain afterwards. A test that can leave a service down is not a test.
-- **A supervisor RESTARTS its child, so kill the supervisor FIRST** — and check
+- **"The port answers" is NOT "the service is healthy"** - a supervisor that
+  was killed leaves its child running and holding the port, and a launcher
+  that only probes the port says "already up" and never starts a supervisor.
+  The service then serves unsupervised, on possibly stale code, and nothing
+  restarts it if it dies. Worse, the replacement supervisor cannot bind
+  ([Errno 10048]) and the service is DOWN while the launcher reported
+  success. So the launcher must RECLAIM before it decides: clear an orphan
+  only when no live supervisor owns the port, and never touch an unrelated
+  process on it. `hermes/scripts/service_control.py reclaim --port <p>
+  --marker <script>` does this, and both canonical launchers call it before
+  their "already up" check - so the check now means "up AND supervised".
+- **A process matcher must not match its OWN invocation** - the marker is
+  usually the tool's last argument, so the tool's own command line ends
+  with it. A supervisor is a python interpreter whose command line ENDS with
+  the service script: nothing else, and the tool excludes itself by name.
+  A powershell/cmd wrapper that merely has the marker as an ARGUMENT is
+  not a supervisor, and counting it produces a false "2 chains" verdict on
+  a perfectly healthy service.
+- **An unescaped `(` inside a cmd `if ( )` block breaks the parser** - the
+  launcher dies with "- was unexpected at this time" and a non-zero exit,
+  which looks like a service failure and is not one. Keep echo text inside
+  cmd blocks free of parentheses.
+- **A logger with its own handler AND a root handler pointing at the SAME
+  file writes every record twice** - and a traceback, being one record with
+  many lines, is duplicated line for line. `propagate: false` on the child
+  logger is the fix; check the other explicit loggers for the same shape.
+- **Read the service's OWN logs** - the defects that matter (a port that
+  cannot be bound, a record written twice) are visible in the log file and
+  invisible to a passing test suite.
   for an ORPHAN still holding the port: a supervisor that died while
   respawning leaves the child serving, the launcher calls the service
   "already up" and never starts a supervisor. `hermes/scripts/service_control.py`
