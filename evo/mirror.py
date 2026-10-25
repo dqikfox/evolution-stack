@@ -134,8 +134,13 @@ def prune() -> list[str]:
             rel = f.relative_to(MIRROR).as_posix()
             if rel.split("/")[0] not in MANAGED:
                 continue
-            if (paths.HERMES / rel).exists():
+            src = paths.HERMES / rel
+            if src.exists() and not _is_runtime_artefact(src):
                 continue
+            # the source is gone, or it is no longer publishable (a log, a
+            # backup, a quoting accident) - either way it must stop being
+            # published. A filter that only blocks NEW files leaves the old
+            # ones published forever.
             try:
                 f.unlink()
                 removed.append(rel)
