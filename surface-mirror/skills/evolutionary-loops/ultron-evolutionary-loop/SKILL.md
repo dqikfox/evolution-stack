@@ -208,6 +208,53 @@ defects found and the fixes, is in
   episode (sustained pressure) and on its recovery — never per sample. Put the
   episode in the operator's existing feed (a TESSERACT alert row) rather than
   opening a second channel nobody watches.
+- **A secret in a LOCAL corpus is still a published secret** — the NEXUS corpus is
+  served over HTTP by `/api/ask` and embedded into a vector index, so a
+  credential stored in a note is a credential the AI can read back out. A
+  Notion export of a credential vault had put live Notion, Telegram and Twilio
+  keys into it. Redact at the STORE (`create_note` is the choke point), not
+  only at the publish boundary: a corpus is a read boundary too. A redaction
+  keeps the note's MEANING — `[[REDACTED:NAME]]` plus a `redacted:secrets`
+  tag — and the guard must stay narrow, because a guard that mangles real
+  notes gets switched off.
+- **A scanner that only understands assignments cannot see a bare secret** — a
+  key staged alone on a line has no name and no context. The estate sweep
+  reported the scratch tree clean while the live n8n key sat in it. Detect a
+  high-entropy token alone on a line as well, and keep the rule narrow (not
+  hex-only, mixed case, entropy ≥ 3.5, never a placeholder or a uuid).
+- **Git QUOTES non-ASCII paths, so a suffix filter silently skips the file** —
+  every credential note was named with an em-dash and an emoji, so the history
+  sweep reported those repos clean while the secrets sat in the history. Use
+  `git ls-tree -r -z` and split on NUL. A sweep that has never scanned a file
+  is a sweep that has never been tested.
+- **A synthetic secret-shaped fixture in source is a finding in every commit
+  that contains it** — assemble test fixtures at runtime. The pre-commit
+  scanner is right to refuse a commit whose test file holds a literal.
+- **An endpoint that counts a swallowed exception as a success will lie** —
+  `/api/elite/reindex` wiped the collection, indexed nothing (every call
+  failed on a `KeyError` that was swallowed) and still reported
+  "indexed: 2472". Make the count honest, rebuild BEFORE deleting the stale
+  entries, and never let a helper swallow its error without reporting it.
+- **Batch the work, and know which part is slow** — 2,472 notes took 10m50s
+  because each note was one embedding call and one Chroma upsert. 32 notes
+  per embedding call and one upsert per batch: 2s per note → 0.06. Chroma's
+  cost is per CALL, not per row.
+- **A test suite that talks to the LIVE service writes into the LIVE corpus** —
+  the hive test posts a message, the running service stores it as a note, and
+  `/api/ask` then serves the test output as knowledge. Five notes per run had
+  been accumulating for weeks. Give the suite its own corpus
+  (`NEXUS_CORPUS_DIR`) and make a test that writes delete what it wrote.
+- **A supervisor RESTARTS its child, so kill the supervisor FIRST** — and check
+  for an ORPHAN still holding the port: a supervisor that died while
+  respawning leaves the child serving, the launcher calls the service
+  "already up" and never starts a supervisor. `hermes/scripts/service_control.py`
+  does this and asserts the end state: one supervisor CHAIN with the port
+  owned by its tree. Count CHAINS, not processes — the uv shim and the venv
+  python are two processes in one tree.
+- **An env var that already exists will hijack your new override** — the Hermes
+  `.env` had a stale `NEXUS_DB_PATH` pointing at an empty `core/nexus.db`.
+  Use a NEW name for a new knob, and never make a live path depend on an
+  inherited environment variable without checking what is already set.
 - **Report the delta, not the vibe** — "gate 84.62 → 76.92, rejected, rolled back"
   beats "made it better".
 - **Network awareness** — never ignore the relationship between this host (THRONE) and
