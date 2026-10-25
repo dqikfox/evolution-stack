@@ -96,10 +96,15 @@ def _entries(repo: str, sha: str) -> list[tuple[str, str]]:
     return out
 
 
-def sweep(repo: str) -> list[str]:
+def sweep(repo: str) -> tuple[list[str], int]:
     r = subprocess.run(["git", "-C", repo, "rev-list", "--all"],
                        capture_output=True, text=True, timeout=900)
     shas = [s for s in r.stdout.split() if s]
+    if not shas:
+        # A repo with no commits (or a path that is not a git repo) scans
+        # nothing. Reporting "0 findings" for that would be a lie: it
+        # would look exactly like a clean repository.
+        raise RuntimeError(f"{repo}: no commits found - is this a git repository?")
     reader = BlobReader(repo)
     # A blob's findings do not depend on which commit contains it, so each
     # blob is SCANNED once and the result is re-labelled per commit. Without
@@ -118,7 +123,7 @@ def sweep(repo: str) -> list[str]:
                     hits.add(f"{sha[:8]}:{x.file}:{x.line} {x.kind} in field '{x.name}'")
     finally:
         reader.close()
-    return sorted(hits)
+    return sorted(hits), len(shas)
 
 
 def main() -> int:
@@ -126,14 +131,27 @@ def main() -> int:
         print(__doc__)
         return 2
     total = 0
+    scanned = 0
+    failed = 0
     for repo in sys.argv[1:]:
-        hits = sweep(repo)
+        try:
+            hits, n = sweep(repo)
+        except Exception as e:
+            # A repo that could not be swept is NOT a clean repo. Say so,
+            # and fail the run - a silent "0 findings" for an unscanned
+            # repository is the most dangerous output this tool can give.
+            failed += 1
+            print(f"[history-sweep] {repo}: COULD NOT BE SWEPT - {e}", flush=True)
+            continue
         total += len(hits)
-        print(f"[history-sweep] {repo}: {len(hits)} finding(s)", flush=True)
+        scanned += n
+        print(f"[history-sweep] {repo}: {len(hits)} finding(s) "
+              f"across {n} commit(s)", flush=True)
         for h in hits:
             print("   ", h, flush=True)
-    print(f"[history-sweep] total {total}", flush=True)
-    return 1 if total else 0
+    print(f"[history-sweep] total {total} across {scanned} commit(s)"
+          + (f", {failed} repo(s) NOT swept" if failed else ""), flush=True)
+    return 1 if (total or failed) else 0
 
 
 if __name__ == "__main__":
