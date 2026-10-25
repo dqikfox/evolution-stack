@@ -45,6 +45,25 @@ def cmd_bench(args) -> int:
     return 0 if not sc.gate_failures else 1
 
 
+def _report_refused() -> list:
+    """Surface every file the mirror refused to publish.
+
+    The mirror refuses a file that contains a secret-shaped value, and
+    records it in mirror.REFUSED. A refusal that nobody sees looks
+    exactly like a clean run: the file is simply absent from the public
+    repository, and the credential sits in the clear in the working tree
+    where the next mirror will refuse it again. Refusals are printed to
+    stderr so they land in the run log next to the JSON result.
+    """
+    from . import mirror
+    refused = [{"file": target, "reasons": reasons}
+               for target, reasons in mirror.REFUSED]
+    for item in refused:
+        print(f"[mirror] REFUSED {item['file']} - {', '.join(item['reasons'])}",
+              file=sys.stderr)
+    return refused
+
+
 def cmd_mirror(args) -> int:
     """Mirror the improvable surface into this repo (git-tracked history)."""
     from . import mirror
@@ -53,7 +72,8 @@ def cmd_mirror(args) -> int:
         return 0
     if args.all:
         files = mirror.record_all()
-        _print({"mirrored": len(files)})
+        refused = _report_refused()
+        _print({"mirrored": len(files), "refused": refused})
         return 0
     _print({"drift": mirror.diff_targets()})
     return 0
@@ -186,6 +206,17 @@ def cmd_apply(args) -> int:
         print(f"ACCEPTED (+{after.gate_score - before.gate_score:.2f}) — kept, snapshot {snap} retained")
         if mirrored and not mirrored.startswith("mirror failed"):
             print(f"mirrored -> {mirrored}")
+        else:
+            # a refusal must be visible: a file that was not published
+            # because it holds a secret is not the same as a file that
+            # was published
+            try:
+                from . import mirror
+                for target, reasons in mirror.REFUSED:
+                    if target.endswith(v["target"]):
+                        print(f"[mirror] REFUSED {target} - {', '.join(reasons)}")
+            except Exception:
+                pass
         return 0
 
     archive.set_status(v["id"], "rejected", after.gate_score)

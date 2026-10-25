@@ -56,6 +56,46 @@ PATTERNS = [
     ("urlsafe_40", re.compile(r"\b[A-Za-z0-9_-]{40,}\b")),
 ]
 
+# ---------------------------------------------------------------------------
+# NAME-INDEPENDENT rules.
+#
+# The rules above are assignment-based: they need a field name that looks
+# secret-ish, and they refuse names that look harmless. A name plus a value
+# is much stronger evidence than a value alone, so that default is right -
+# but it leaves a real blind spot. A credential pasted into a note, a README
+# or a chat transcript has no field name at all, and a webhook URL ends in
+# "_URL", so the name looks harmless too.
+#
+# That blind spot was not theoretical. A Telegram bot token sat in the NEXUS
+# corpus and in commits of a public repo, and the history sweep reported
+# those repositories clean - 0 findings across 247 commits - because the
+# token was in prose, not in an assignment.
+#
+# The rules below are the ones where the SHAPE alone is the credential: a
+# prefixed token format with a published length, or a webhook URL whose
+# last path segment IS the key. They are matched against raw lines, not
+# against assignment values.
+# ---------------------------------------------------------------------------
+PROSE_PATTERNS = [
+    ("telegram_bot_token", re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")),
+    ("huggingface_token", re.compile(r"\bhf_[A-Za-z0-9]{30,40}\b")),
+    ("notion_token", re.compile(r"\bsecret_[A-Za-z0-9]{40}\b")),
+    ("xai_api_key", re.compile(r"\bxai-[A-Za-z0-9]{20,}\b")),
+    ("discord_webhook", re.compile(
+        r"discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_-]{60,}")),
+    ("slack_webhook", re.compile(
+        r"hooks\.slack\.com/services/[A-Za-z0-9_/-]{30,}")),
+    ("sendgrid_key", re.compile(r"\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}")),
+    ("digitalocean_token", re.compile(r"\bdop_v1_[a-f0-9]{64}\b")),
+    ("supabase_token", re.compile(r"\bsbp_[a-f0-9]{40}\b")),
+    ("shopify_token", re.compile(r"\bshp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}\b")),
+    ("mailgun_key", re.compile(r"\bkey-[a-f0-9]{32}\b")),
+    ("twilio_key", re.compile(r"\bSK[0-9a-f]{32}\b")),
+]
+# a body that is a long run of one repeated character is a documentation
+# placeholder, not a credential - the same rule the assignment path uses
+PLACEHOLDER_RUN = re.compile(r"(?:x{8,}|\*{8,})")
+
 # values that are never secrets
 SAFE_VALUES = {
     "true", "false", "yes", "no", "none", "null", "undefined", "local",
@@ -192,6 +232,26 @@ def _value_is_secret(name: str, value: str) -> str | None:
     return None
 
 
+def _prose_secret_kind(line: str) -> str | None:
+    """A credential whose shape identifies it, with no name context.
+
+    Matched against a raw line, so it sees a credential in a note, a
+    README or a chat transcript - places where there is no assignment and
+    therefore no field name to judge.
+    """
+    if DEFINES_PATTERN.search(line):
+        return None
+    for kind, pat in PROSE_PATTERNS:
+        m = pat.search(line)
+        if not m:
+            continue
+        token = m.group(0)
+        if PLACEHOLDER_RUN.search(token):
+            continue
+        return kind
+    return None
+
+
 def scan_text(text: str, file: str = "<text>") -> list[Finding]:
     findings: list[Finding] = []
     for i, line in enumerate(text.splitlines(), 1):
@@ -221,6 +281,13 @@ def scan_text(text: str, file: str = "<text>") -> list[Finding]:
         kind = _standalone_secret_kind(line)
         if kind:
             finding = Finding(file, i, "standalone", kind)
+            if finding not in findings:
+                findings.append(finding)
+    # a credential whose shape is the credential, with no name to judge
+    for i, line in enumerate(text.splitlines(), 1):
+        kind = _prose_secret_kind(line)
+        if kind:
+            finding = Finding(file, i, "prose", kind)
             if finding not in findings:
                 findings.append(finding)
     return findings

@@ -164,6 +164,126 @@ def test_history_sweep_scans_files_with_non_ascii_names():
 
 
 
+# ---------------------------------------------------------------------------
+# NAME-INDEPENDENT rules: a credential in prose.
+#
+# The scanner was assignment-based, so it needed a field name that looked
+# secret-ish. A credential pasted into a note has no field name, and a
+# webhook URL ends in "_URL", so the name looked harmless too. The history
+# sweep reported 0 findings across 247 commits while a live Telegram token
+# sat in prose in one of them.
+#
+# Assembled at runtime, for the same reason as every other fixture here: a
+# literal token in the source is itself a finding.
+# ---------------------------------------------------------------------------
+TG_TOKEN = str(123456789) + ":" + "Aq7" + "b" * 32
+HF_TOKEN = "hf_" + "c" * 34
+NOTION_TOKEN = "secret_" + "d" * 40
+XAI_KEY = "xai-" + "e" * 40
+DISCORD_HOOK = ("https://discord.com/api/webhooks/" + "1" * 18 + "/" + "f" * 68)
+
+
+def test_a_telegram_token_in_prose_is_detected():
+    """A token in a sentence has no field name; the shape is the credential."""
+    line = "the bot token for the throne bot is " + TG_TOKEN + " keep it safe"
+    hits = scan_text(line, "note.md")
+    assert hits, "a telegram token in prose must be detected"
+    assert hits[0].kind == "telegram_bot_token"
+
+
+def test_a_telegram_token_under_a_safe_looking_name_is_detected():
+    """'*_URL' looks harmless, but a webhook URL is a credential."""
+    line = 'DISCORD_WEBHOOK_URL = "' + DISCORD_HOOK + '"'
+    hits = scan_text(line, "cfg.py")
+    assert hits, "a webhook URL must be detected even when the name says url"
+    assert hits[0].kind == "discord_webhook"
+
+
+def test_a_huggingface_token_in_prose_is_detected():
+    hits = scan_text("use " + HF_TOKEN + " for the model pull", "note.md")
+    assert hits, "a huggingface token must be detected"
+    assert hits[0].kind == "huggingface_token"
+
+
+def test_a_notion_token_in_prose_is_detected():
+    hits = scan_text("notion integration " + NOTION_TOKEN, "note.md")
+    assert hits, "a notion token must be detected"
+    assert hits[0].kind == "notion_token"
+
+
+def test_an_xai_key_in_prose_is_detected():
+    hits = scan_text("XAI_API_KEY is " + XAI_KEY, "note.md")
+    assert hits, "an xai key must be detected"
+    assert hits[0].kind == "xai_api_key"
+
+
+def test_a_placeholder_token_is_not_reported():
+    """A run of x characters is documentation, not a credential."""
+    line = "the token is " + str(123456789) + ":" + "A" + "x" * 34
+    assert scan_text(line, "doc.md") == [], "a placeholder token must stay clean"
+
+
+def test_the_prose_rules_do_not_flag_their_own_source():
+    """The scanner's own pattern literals must not read as credentials."""
+    src = ('PROSE = re.compile(r"\\b\\d{8,10}:[A-Za-z0-9_-]{35}\\b")\n'
+           'HOOK = re.compile(r"discord(?:app)?\\.com/api/webhooks/\\d+/[A-Za-z0-9_-]{60,}")\n')
+    assert scan_text(src, "t") == [], "the scanner must not flag its own source"
+
+
+def test_ordinary_prose_is_not_a_secret():
+    """The prose rules must not turn a note into a finding."""
+    line = ("we talked about the schedule for tuesday and the cost of the "
+            "hardware was about 12 hundred dollars in total")
+    assert scan_text(line, "note.md") == [], "ordinary prose must stay clean"
+
+
+def test_a_refusal_is_reported_not_silent():
+    """A file the mirror refuses must be visible in the command output.
+
+    The mirror refuses a file that holds a secret-shaped value and
+    records it in mirror.REFUSED. If the command does not surface that,
+    a refusal is indistinguishable from a clean run - the file is simply
+    missing from the public repository and the credential stays in the
+    clear in the working tree.
+    """
+    import io
+    import json as _json
+    import sys as _sys
+    from contextlib import redirect_stderr, redirect_stdout
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from evo import mirror
+    from evo.loop import cmd_mirror
+
+    class _Args:
+        diff = False
+        all = True
+
+    # plant a file with a prose credential in the mirrored source tree
+    root = mirror.paths.SKILLS_DIR / "control-refusal-probe"
+    root.mkdir(parents=True, exist_ok=True)
+    probe = root / "SKILL.md"
+    probe.write_text(
+        "---\nname: control-refusal-probe\ndescription: Use when testing refusals.\n---\n\n"
+        "the throne bot token is " + str(123456789) + ":" + "Aq7" + "b" * 32 + "\n",
+        encoding="utf-8")
+    published = mirror.MIRROR / "skills" / "control-refusal-probe" / "SKILL.md"
+    try:
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            cmd_mirror(_Args())
+        payload = _json.loads(out.getvalue())
+        assert payload.get("refused"), "a refusal must be reported in the output"
+        assert any("control-refusal-probe" in r["file"] for r in payload["refused"]), \
+            "the refused file must be named"
+        assert "REFUSED" in err.getvalue(), "a refusal must be printed to stderr"
+        assert not published.exists(), "a file with a secret must never be published"
+    finally:
+        import shutil
+        shutil.rmtree(root, ignore_errors=True)
+        if published.exists():
+            published.unlink()
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(list(globals().items())):
