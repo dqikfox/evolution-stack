@@ -429,6 +429,17 @@ coreutils under an MSYS PATH and the wait silently returns instantly.
 Full contract, evidence and verification recipe in
 `references/launcher-contract.md`.
 
+## The disk-cleanup plugin deletes permanent artifacts by NAME and by TRACKING age
+
+The house `disk-cleanup` plugin sweeps the Hermes home at the end of every task, and two of its rules will silently delete work that is supposed to be permanent:
+
+- A file named `test_*` or `tmp_*` is category `test` and is **deleted at the end of the next task** (age >= 0). The only exemption is a file inside a git worktree — `hermes/scripts/` is not one. A permanent contract named `test_nexus_launcher_contract.py` was deleted out from under a passing run this way.
+- Anything under `hermes/cron/output/` is category `cron-output` and is deleted at **14 tracked-days**. The tracking timestamp is written once and never refreshed, so a report rewritten every day still ages from the day it was first tracked — the scout report the benchmark reads as its freshness input was deleted this way, 24 days after it was first tracked.
+
+Rules that follow: a permanent artifact is named like one; a gate input belongs where its writer owns it (`hermes/state/`, which nothing tracks); and when an artifact vanishes, read `hermes/disk-cleanup/cleanup.log` before hunting for a bug in your own code — the plugin is not in any tree you would think to search.
+
+Full rules, the evidence and the `dry_run()` recipe in `references/disk-cleanup-hazard.md`.
+
 ## Quick recovery checklist
 1. `hermes gateway start`
 2. Retarget any cron still on nous/z-ai to ollama-launch
