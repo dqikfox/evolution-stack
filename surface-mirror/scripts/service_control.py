@@ -116,6 +116,20 @@ def chain_of(pid):
     return chain
 
 
+def command_line_matches_marker(command_line: str, marker: str) -> bool:
+    """Does this command line belong to the service we manage?
+
+    A marker match for a SUPERVISOR means the command line ENDS with the
+    script. An ORPHAN - the service's own child left holding the port
+    after its supervisor died - has a different shape: the script sits in
+    the middle of the command line, followed by its arguments. So the
+    orphan check is a containment test, and it is the only thing standing
+    between a reclaim and an unrelated process that happens to hold the
+    port.
+    """
+    return bool(command_line) and marker.lower() in command_line.lower()
+
+
 def stop(marker, port=None):
     sups = supervisor_pids(marker)
     if not sups:
@@ -142,6 +156,15 @@ def stop(marker, port=None):
         lp = listener_pid(port)
         if lp:
             chain = chain_of(lp)
+            holder = next((p for p in chain if p["ProcessId"] == lp), {})
+            if not command_line_matches_marker(holder.get("CommandLine") or "", marker):
+                # Something that is not our service holds the port. Stopping
+                # our own processes is done; killing the stranger is not.
+                print(f"  :{port} is held by a process that is not ours - "
+                      f"left alone")
+                print(f"  :{port} listener after stop:",
+                      listener_pid(port) or "(free)")
+                return True
             print(f"  clearing orphan chain holding :{port}: "
                   f"{[p['ProcessId'] for p in chain]}")
             for p in chain:
@@ -220,6 +243,14 @@ def reclaim(port, marker):
         return True
     print(f"  :{port} is held by an ORPHAN (no supervisor above it): "
           f"{[p['ProcessId'] for p in chain]}")
+    holder = next((p for p in chain if p["ProcessId"] == lp), {})
+    if not command_line_matches_marker(holder.get("CommandLine") or "", marker):
+        # The port is held by something that is NOT our service. Killing it
+        # would take out an unrelated process, so the reclaim refuses and
+        # the launcher reports the conflict instead of stealing the port.
+        print(f"  refusing to touch it: the holder is not ours "
+              f"(no {marker!r} in its command line)")
+        return False
     for p in chain:
         subprocess.run(["taskkill", "/PID", str(p["ProcessId"]), "/F", "/T"],
                        capture_output=True, text=True)

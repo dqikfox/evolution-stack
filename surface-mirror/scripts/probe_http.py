@@ -12,22 +12,46 @@ redirection is not supported". A stdlib urllib call in an interpreter that
 is already warm answers in tens of milliseconds and behaves the same
 everywhere.
 
-Usage:  python probe_http.py <url> [timeout_seconds]
+Usage:  python probe_http.py <url> [timeout_seconds] [--contains TEXT]
+
+--contains TEXT additionally requires TEXT to appear in the response body.
+A launcher that probes before it reclaims needs that: "something answered
+200 on this port" is not the same claim as "MY service answered". The
+substring is checked against the first 64 KiB of the body, which is where
+a service's identity marker lives.
 """
 import sys
 import urllib.error
 import urllib.request
 
+BODY_LIMIT = 65536
+
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 2:
-        print("usage: probe_http.py <url> [timeout]", file=sys.stderr)
+    args = [a for a in argv[1:] if a not in ("--contains",)]
+    contains = None
+    if "--contains" in argv:
+        idx = argv.index("--contains")
+        if idx + 1 >= len(argv):
+            print("probe_http.py: --contains needs a value", file=sys.stderr)
+            return 2
+        contains = argv[idx + 1]
+        args = [a for i, a in enumerate(argv[1:], start=1) if i not in (idx, idx + 1)]
+    if not args:
+        print("usage: probe_http.py <url> [timeout] [--contains TEXT]", file=sys.stderr)
         return 2
-    url = argv[1]
-    timeout = float(argv[2]) if len(argv) > 2 else 3.0
+    url = args[0]
+    timeout = float(args[1]) if len(args) > 1 else 3.0
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
-            return 0 if resp.status == 200 else 1
+            if resp.status != 200:
+                return 1
+            if contains is None:
+                return 0
+            body = resp.read(BODY_LIMIT)
+            if isinstance(body, bytes):
+                body = body.decode("utf-8", "replace")
+            return 0 if contains in body else 1
     except Exception:
         return 1
 
