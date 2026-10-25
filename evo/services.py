@@ -20,6 +20,7 @@ import json
 import socket
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -121,6 +122,53 @@ def clean_env() -> dict:
     return env
 
 
+# Windows process-creation flags. DETACHED_PROCESS is 0x00000008.
+# CREATE_NO_WINDOW is 0x08000000 - a DIFFERENT thing, and the constant
+# that used to be passed here under a "# DETACHED_PROCESS" comment. It
+# hides the console and does nothing else: the child stays in the
+# caller's process group, so a service started by a heal inside a cron
+# session inherits that session's lifetime and dies when the session is
+# reaped. The comment was the bug's cover story.
+DETACHED_PROCESS = 0x00000008
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+CREATE_NO_WINDOW = 0x08000000
+
+SPAWNER = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "hermes" / "scripts" / "spawn_detached.py"
+
+
+def _spawn_detached(command: list[str], cwd: str, log_path: Path) -> bool:
+    """Start the launcher fully detached from THIS process.
+
+    The house spawner gives the child its own process group, closes the
+    inherited handles and redirects stdio to files. It also EXITS
+    immediately, which breaks the ancestry chain: the service is no
+    longer a descendant of the session that asked for the heal, so the
+    session can be reaped without taking the service down with it.
+
+    A heal that leaves the service inside a short-lived session is a heal
+    that works exactly once.
+    """
+    if SPAWNER.is_file():
+        try:
+            result = subprocess.run(
+                [sys.executable, str(SPAWNER),
+                 "--log", str(log_path),
+                 "--err", str(log_path) + ".err",
+                 "--cwd", cwd, "--"] + command,
+                capture_output=True, text=True, timeout=120,
+                encoding="utf-8", errors="replace")
+            return result.returncode == 0
+        except Exception:
+            return False
+    # No house spawner: fall back to the real detached flags rather than
+    # to a constant that only hides the console.
+    flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+    subprocess.Popen(command, cwd=cwd,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     close_fds=True, env=clean_env(), creationflags=flags)
+    return True
+
+
 def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
     """Launch the documented start path and wait for the port to answer."""
     if not s.healable:
@@ -130,14 +178,14 @@ def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
         return False, f"start path missing: {p}"
     try:
         env = clean_env()
+        log_path = paths.HERMES / "logs" / f"heal_{s.name}.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         if s.start_type == "cmd":
-            args = ["cmd", "/c", str(p)]
+            args = ["cmd.exe", "/c", str(p)]
             if s.start_args:
                 args.append(s.start_args)
-            subprocess.Popen(args, cwd=str(p.parent),
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            close_fds=True, env=env,
-                             creationflags=0x08000000)  # DETACHED_PROCESS
+            if not _spawn_detached(args, str(p.parent), log_path):
+                return False, "the launcher could not be started"
         else:  # python script
             # Some services need a specific interpreter: NEXUS only works on
             # the uv venv that has numpy + chromadb installed, and it must
@@ -145,10 +193,8 @@ def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
             interpreter = s.start_interpreter or "python"
             if not Path(interpreter).exists():
                 return False, f"interpreter missing: {interpreter}"
-            subprocess.Popen([interpreter, str(p)], cwd=str(p.parent),
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            close_fds=True, env=env,
-                             creationflags=0x08000000)
+            if not _spawn_detached([interpreter, str(p)], str(p.parent), log_path):
+                return False, "the start script could not be started"
     except Exception as e:
         return False, f"launch failed: {e}"
     deadline = time.time() + wait_s

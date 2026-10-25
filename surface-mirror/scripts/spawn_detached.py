@@ -49,6 +49,12 @@ def spawn(command: list[str], cwd: str | None, log: str, err: str | None) -> int
     # a shadowed PYTHONPATH makes a project venv load foreign packages.
     for var in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "VIRTUAL_ENV"):
         env.pop(var, None)
+    # UTF-8 for the child's own streams. The console code page on this host
+    # is cp1252, so a child that writes a character outside it (the
+    # 1Password CLI's error text, an emoji in a log line) dies with
+    # UnicodeEncodeError - and a launcher that dies means a dead service.
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
 
     out_fh = open(log_path, "a", encoding="utf-8", errors="replace")
     err_fh = open(err_path, "a", encoding="utf-8", errors="replace")

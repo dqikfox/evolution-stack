@@ -356,6 +356,11 @@ With that in place the key never touches disk as plaintext, and the `extra.key: 
 - Probe the vault with ONE read before doing anything that resolves the whole map.
 - Never restart a healthy gateway while the vault is limited: a restart re-resolves everything, so it would take working platforms down to fix one broken one.
 - `fix_api_server_platform.py` implements exactly this - one probe, then the restart, then the verification - and leaves the running gateway alone until the vault answers.
+- If you must edit `config.yaml` by hand while the vault is limited, do a surgical anchored insert and validate (`yaml.safe_load` + a duplicate-key check). A PyYAML round-trip would strip the file's comments; a CLI call would re-resolve every secret.
+
+**A service that points at `env:NAME` with no mapping for NAME fails SILENTLY.** The api_server adapter simply refused to start, so `:8642` was dead and no log said why. Audit the vault MAP against what the stack actually READS - not against what the vault contains. A key sitting in the vault that no mapping points at is, in practice, a key nobody has.
+
+**The same class of gap hit OLLAMA_API_KEY:** TESSERACT reads it from its own environment at import, so a mapping in the Hermes config only reaches it on a fresh start that resolves the map - which is why the remediation restarts TESSERACT AFTER the gateway, and why the order matters.
 
 **Quick enable:**
 ```bash

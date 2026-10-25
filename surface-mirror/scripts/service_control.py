@@ -126,8 +126,50 @@ def command_line_matches_marker(command_line: str, marker: str) -> bool:
     orphan check is a containment test, and it is the only thing standing
     between a reclaim and an unrelated process that happens to hold the
     port.
+
+    A TRUE orphan is harder: the supervisor is gone, so the only identity
+    left on the port is the project itself. The marker "TESSERACT\\start.py"
+    therefore also matches a command line that carries the project token
+    "TESSERACT" - the interpreter path of the service's own venv, its log
+    config, anything of ours. That is still a service-specific token, so
+    an unrelated process on the port is still left alone, but our own
+    orphan can finally be cleared instead of blocking every restart.
     """
-    return bool(command_line) and marker.lower() in command_line.lower()
+    if not command_line:
+        return False
+    low = command_line.lower()
+    marker = marker.lower()
+    if marker in low:
+        return True
+    if "\\" in marker:
+        token = marker.split("\\")[0]
+        if token and token in low:
+            return True
+    return False
+
+
+def chain_belongs_to_service(chain, marker) -> bool:
+    """Is this process chain ours?
+
+    A service's identity is not always on the process that HOLDS the port.
+    The venv shim is the parent: the interpreter path carries the project
+    (TESSERACT\\.venv\\Scripts\\python.exe), while the real interpreter that
+    ends up owning the socket is a bare uv python with no project token at
+    all. Checking only the holder therefore refused our own orphan and
+    blocked every restart.
+
+    So the check walks the chain - but only its INTERPRETER members. A
+    shell whose command line merely mentions the project (a transcript
+    command, a grep) must never make a stranger look like our service.
+    """
+    for p in chain:
+        name = (p.get("Name") or "").lower()
+        if not name.startswith("python"):
+            continue
+        cmd = p.get("CommandLine") or ""
+        if command_line_matches_marker(cmd, marker):
+            return True
+    return False
 
 
 def stop(marker, port=None):
@@ -157,7 +199,8 @@ def stop(marker, port=None):
         if lp:
             chain = chain_of(lp)
             holder = next((p for p in chain if p["ProcessId"] == lp), {})
-            if not command_line_matches_marker(holder.get("CommandLine") or "", marker):
+            if not (command_line_matches_marker(holder.get("CommandLine") or "", marker)
+                    or chain_belongs_to_service(chain, marker)):
                 # Something that is not our service holds the port. Stopping
                 # our own processes is done; killing the stranger is not.
                 print(f"  :{port} is held by a process that is not ours - "
@@ -244,8 +287,9 @@ def reclaim(port, marker):
     print(f"  :{port} is held by an ORPHAN (no supervisor above it): "
           f"{[p['ProcessId'] for p in chain]}")
     holder = next((p for p in chain if p["ProcessId"] == lp), {})
-    if not command_line_matches_marker(holder.get("CommandLine") or "", marker):
-        # The port is held by something that is NOT our service. Killing it
+    if not (command_line_matches_marker(holder.get("CommandLine") or "", marker)
+            or chain_belongs_to_service(chain, marker)):
+        # Something that is NOT our service holds the port. Killing it
         # would take out an unrelated process, so the reclaim refuses and
         # the launcher reports the conflict instead of stealing the port.
         print(f"  refusing to touch it: the holder is not ours "
