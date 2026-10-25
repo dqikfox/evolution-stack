@@ -32,8 +32,10 @@ from evo import bench, paths  # noqa: E402
 def _scout_check(tmp_path: Path, monkeypatch) -> bench.Check:
     report = tmp_path / "evolution_scout.json"
     log = tmp_path / "evolution_scout.log"
+    state = tmp_path / "state" / "evolution_scout.json"
     monkeypatch.setattr(paths, "SCOUT_REPORT", report)
     monkeypatch.setattr(paths, "SCOUT_LOG", log)
+    monkeypatch.setattr(paths, "SCOUT_STATE_REPORT", state)
     for c in bench.check_scout():
         if c.name == "scout:fresh":
             return c
@@ -101,3 +103,34 @@ def test_a_timestamp_in_the_future_is_not_fresh(tmp_path, monkeypatch):
     c = _scout_check(tmp_path, monkeypatch)
     assert not c.passed, c.detail
     assert "future" in c.detail, c.detail
+
+
+def test_the_scouts_own_copy_is_the_one_the_gate_reads(tmp_path, monkeypatch):
+    """The gate reads the scout's own copy first.
+
+    The cron engine owns cron/output. A gate input that lives in a
+    directory another system can prune is a gate input that can vanish
+    without anything having failed - which is exactly what happened:
+    the bench reported a healthy scout as missing.
+    """
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f+00:00")
+    state = tmp_path / "state" / "evolution_scout.json"
+    state.parent.mkdir(parents=True, exist_ok=True)
+    _write_report(state, ts, findings=3)
+    # the cron/output copy is gone entirely
+    c = _scout_check(tmp_path, monkeypatch)
+    assert c.passed, c.detail
+    assert "from state report" in c.detail, c.detail
+    assert "3 findings" in c.detail, c.detail
+
+
+def test_the_scouts_own_copy_survives_the_cron_copy_being_pruned(tmp_path, monkeypatch):
+    """Both copies present: the owned one wins, and both are consistent."""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f+00:00")
+    _write_report(tmp_path / "evolution_scout.json", ts, findings=1)
+    state = tmp_path / "state" / "evolution_scout.json"
+    state.parent.mkdir(parents=True, exist_ok=True)
+    _write_report(state, ts, findings=1)
+    c = _scout_check(tmp_path, monkeypatch)
+    assert c.passed, c.detail
+    assert "from state report" in c.detail, c.detail

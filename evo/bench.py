@@ -306,12 +306,18 @@ def check_scout() -> list[Check]:
     ts = None
     findings = None
     source = None
-    if rp.exists():
+    # The scout's own copy comes first: the cron engine owns cron/output
+    # and its pruning rules are not ours. The cron/output copy is read
+    # second for backwards compatibility.
+    for candidate, tag in ((getattr(paths, "SCOUT_STATE_REPORT", None), "state report"),
+                           (rp, "report")):
+        if ts is not None or candidate is None or not candidate.exists():
+            continue
         try:
-            d = json.loads(rp.read_text(encoding="utf-8"))
+            d = json.loads(candidate.read_text(encoding="utf-8"))
             ts = _parse_ts(d.get("ts"))
             findings = d.get("finding_count")
-            source = "report"
+            source = tag
         except Exception:
             pass
     if ts is None and paths.SCOUT_LOG.exists():

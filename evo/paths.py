@@ -40,6 +40,10 @@ LEGACY_EVOLVE = Path(r"C:\Users\KING\Projects\evolution")
 SCOUT = HERMES / "scripts" / "evolution_scout.py"
 WATCHDOG = HERMES / "scripts" / "watchdog.py"
 SCOUT_REPORT = HERMES / "cron" / "output" / "evolution_scout.json"
+# The scout's OWN copy. The cron engine owns cron/output, and the gate
+# must not read its freshness input from a directory another system can
+# prune. This one is written by the scout and read by the bench.
+SCOUT_STATE_REPORT = HERMES / "state" / "evolution_scout.json"
 SCOUT_LOG = HERMES / "cron" / "output" / "evolution_scout.log"
 HEALTH_STATE = HERMES / "cron" / "output" / "health_state.json"
 

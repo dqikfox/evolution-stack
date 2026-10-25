@@ -16,6 +16,28 @@ OUT.mkdir(parents=True, exist_ok=True)
 REPORT = OUT / "evolution_scout.json"
 LOG = OUT / "evolution_scout.log"
 
+# The cron engine owns OUT. Its pruning rules are not ours, and a report
+# that the GATE reads as its freshness input must not live in a
+# directory another system can prune. STATE is ours: the scout owns it,
+# the bench reads it first, and the cron/output copy is kept only for
+# the log-reader and for backwards compatibility.
+STATE = HERMES / "state"
+STATE.mkdir(parents=True, exist_ok=True)
+STATE_REPORT = STATE / "evolution_scout.json"
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Write a file so a reader never sees a half-written one.
+
+    A reader that catches the file between the truncate and the write
+    reads empty content and concludes the report is corrupt. The
+    temporary file lives in the destination directory so the replace is
+    a rename on the same volume, not a copy.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
 
 def port_open(port: int) -> bool:
     try:
@@ -150,7 +172,9 @@ def main() -> int:
         "findings": findings,
         "priority_order": sorted(findings, key=lambda f: {"high": 0, "medium": 1, "low": 2, "info": 3}.get(f["severity"], 9)),
     }
-    REPORT.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    payload = json.dumps(report, indent=2)
+    write_atomic(STATE_REPORT, payload)
+    write_atomic(REPORT, payload)
     prior = LOG.read_text(encoding="utf-8") if LOG.exists() else ""
     LOG.write_text(
         prior + f"[{ts}] findings={len(findings)} high={sum(1 for f in findings if f['severity']=='high')}\n",
