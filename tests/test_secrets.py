@@ -53,7 +53,11 @@ def test_a_real_hex_secret_is_still_caught():
 
 
 def test_a_real_pem_block_is_still_caught():
-    pem = "REDACTED_PRIVATE_KEY_HEADER\nMIIEow==\n-----END RSA PRIVATE KEY-----"
+    # Assembled at runtime: a literal PEM header in the source would be
+    # detected by the scanner - in this file, in the working tree, and in
+    # every commit that contains it.
+    pem = ("-----BEGIN " + "RSA " + "PRIVATE KEY-----\n"
+           "MIIEow==\n" + "-----END " + "RSA " + "PRIVATE KEY-----")
     hits = scan_text(pem, "t")
     assert hits and hits[0].kind == "private_key_block"
 
@@ -81,6 +85,83 @@ def test_a_placeholder_in_markdown_is_clean():
         (root / "README.md").write_text(
             f'      GITHUB_PERSONAL_ACCESS_TOKEN: "ghp_{X20}"\n', encoding="utf-8")
         assert scan_tree(root) == [], "a placeholder in docs must stay clean"
+
+
+# ---------------------------------------------------------------------------
+# A BARE secret: one token alone on its line.
+#
+# The scanner used to be assignment-based only, so a secret staged in a file
+# on its own - no name, no assignment, no context - was invisible. A live
+# N8N_ENCRYPTION_KEY sat in a scratch file for hours while the scanner
+# reported that tree clean.
+# ---------------------------------------------------------------------------
+
+# Assembled at runtime, for the same reason: a literal 40-character
+# token in the source is a finding.
+BARE_TOKEN = "aB3xQ9mZ7" + "pL2kR8tV4w" + "Y6cD1fH5jN0sG"
+
+
+def test_a_bare_token_on_its_own_line_is_detected():
+    """A file that is nothing but a key must be caught."""
+    findings = scan_text(BARE_TOKEN + "\n", "n8n_new_key.txt")
+    assert findings, "a bare token alone on a line is a secret"
+    assert findings[0].kind == "bare_secret_token"
+
+
+def test_a_bare_token_is_still_caught_in_a_tree():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "n8n_new_key.txt").write_text(BARE_TOKEN + "\n", encoding="utf-8")
+        hits = scan_tree(root)
+        assert hits, "a bare key staged in a file must be found"
+
+
+def test_a_bare_hash_is_not_a_secret():
+    """A sha256 is hex-only, and hex-only is a hash, not a credential."""
+    sha = "903e52d33448db05a698c3cc548c6f3ee31fd04e52b92ba7bfe8ea650c2eafa0"
+    assert scan_text(sha + "\n", "x.txt") == [], "a sha256 digest is not a secret"
+
+
+def test_a_bare_uuid_is_not_a_secret():
+    uuid = "146bc-dfh-ijmop-stvw-xzab-cdhipqty123".replace("-", "-")
+    assert scan_text(uuid + "\n", "x.txt") == [], "a uuid is not a secret"
+
+
+def test_lowercase_prose_is_not_a_secret():
+    assert scan_text("thisisaverylonglowercasestringwithoutanydigitsatall\n", "x.txt") == []
+
+
+# ---------------------------------------------------------------------------
+# The history sweeper had a blind spot: git QUOTES paths that contain
+# non-ASCII characters, and a quoted path does not end in ".md", so every
+# file named with an em-dash or an emoji was skipped. The NEXUS credential
+# notes were named exactly that way.
+# ---------------------------------------------------------------------------
+
+def test_history_sweep_scans_files_with_non_ascii_names():
+    """A secret in a file whose name has an em-dash must be found in history."""
+    import subprocess
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from tools.history_secret_sweep import sweep
+
+    with tempfile.TemporaryDirectory() as d:
+        repo = Path(d)
+        env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+               "PATH": r"C:\Windows\System32;C:\Program Files\Git\cmd"}
+        def git(*a):
+            return subprocess.run(["git", "-C", str(repo), *a], capture_output=True,
+                                  text=True, env=env, timeout=120)
+        git("init", "-q")
+        name = "notes/detailed-log-\u2014credential-vault\U0001F510.md"
+        (repo / "notes").mkdir(exist_ok=True)
+        (repo / name).write_text(f'MEM0_API_KEY={BARE_TOKEN}\n', encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "add note")
+        hits = sweep(str(repo))
+        assert hits, "a non-ASCII filename must not hide a secret from the history sweep"
+
 
 
 if __name__ == "__main__":

@@ -70,12 +70,23 @@ class BlobReader:
 
 
 def _entries(repo: str, sha: str) -> list[tuple[str, str]]:
-    """(blob, path) for every text-ish file in a commit."""
-    r = subprocess.run(["git", "-C", repo, "ls-tree", "-r", sha],
+    """(blob, path) for every text-ish file in a commit.
+
+    `-z` is not optional here. Git QUOTES any path containing a non-ASCII
+    character unless core.quotePath is false, so a file called
+    "...-detailed-configuration-log-<emoji>-credential-vault.md" comes back
+    as a quoted string that does not end in ".md" - and the suffix filter
+    below silently skips it. Every credential note in the NEXUS corpus was
+    named with an em-dash and an emoji, so the sweep reported those repos
+    clean while the secrets sat in the history. `-z` makes the paths raw.
+    """
+    r = subprocess.run(["git", "-C", repo, "ls-tree", "-r", "-z", sha],
                        capture_output=True, text=True, timeout=300)
     out: list[tuple[str, str]] = []
-    for line in r.stdout.splitlines():
-        meta, _, path = line.partition("\t")
+    for record in r.stdout.split("\0"):
+        if not record:
+            continue
+        meta, _, path = record.partition("\t")
         parts = meta.split()
         if len(parts) < 3 or parts[1] != "blob":
             continue

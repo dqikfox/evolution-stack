@@ -81,6 +81,57 @@ DEFINES_PATTERN = re.compile(
     r"(?i)\b(re\.compile|re\.match|re\.search|re\.findall|re\.sub|"
     r"PATTERN|REGEX|re\.IGNORECASE)\b")
 
+# ---------------------------------------------------------------------------
+# A BARE secret: one token alone on its line.
+#
+# The scanner is assignment-based, so it only sees NAME=value. A secret
+# staged on its own - the whole file is one line, the key - has no name,
+# no assignment and no context, and was therefore invisible. That is not
+# theoretical: a live N8N_ENCRYPTION_KEY sat in a scratch file for hours
+# while the scanner reported that tree clean.
+#
+# The rule is deliberately narrow, because a scanner that cries wolf gets
+# switched off:
+#   * 32-128 characters, base64/base64url alphabet only
+#   * not hex-only (that is a hash, and hashes are everywhere)
+#   * at least one digit, one uppercase and one lowercase letter
+#   * Shannon entropy >= 3.5 bits/char
+#   * not a placeholder, not a UUID, not a path, not a URL
+# ---------------------------------------------------------------------------
+STANDALONE_TOKEN = re.compile(r"^[A-Za-z0-9+/_-]{32,128}={0,2}$")
+HEX_ONLY = re.compile(r"^[0-9a-fA-F]+$")
+UUID_LIKE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                       r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+MIN_STANDALONE_ENTROPY = 3.5
+
+
+def _shannon_entropy(value: str) -> float:
+    import math
+    if not value:
+        return 0.0
+    counts = {c: value.count(c) for c in set(value)}
+    n = len(value)
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
+def _standalone_secret_kind(line: str) -> str | None:
+    """Return a kind if this line is nothing but a secret-shaped token."""
+    v = line.strip()
+    if not v or not STANDALONE_TOKEN.match(v):
+        return None
+    if HEX_ONLY.match(v) or UUID_LIKE.match(v):
+        return None
+    if v.lower() in SAFE_VALUES or PLACEHOLDER.match(v):
+        return None
+    if not (any(c.isdigit() for c in v)
+            and any(c.isupper() for c in v)
+            and any(c.islower() for c in v)):
+        return None
+    if _shannon_entropy(v) < MIN_STANDALONE_ENTROPY:
+        return None
+    return "bare_secret_token"
+
+
 # a name that says the value is NOT a secret
 SAFE_NAME = re.compile(r"(?i)(port|host|url|path|dir|file|user|email|name|"
                        r"timeout|interval|limit|size|version|model|log|"
@@ -164,6 +215,14 @@ def scan_text(text: str, file: str = "<text>") -> list[Finding]:
     for i, line in enumerate(text.splitlines(), 1):
         if PEM_HEADER.search(line):
             findings.append(Finding(file, i, "private_key", "private_key_block"))
+    # a bare secret - one token alone on its line, with no name and no
+    # assignment to give it context
+    for i, line in enumerate(text.splitlines(), 1):
+        kind = _standalone_secret_kind(line)
+        if kind:
+            finding = Finding(file, i, "standalone", kind)
+            if finding not in findings:
+                findings.append(finding)
     return findings
 
 
