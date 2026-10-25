@@ -109,39 +109,76 @@ def ssh_command(host: dict, remote_ps: str, timeout: int = 120) -> tuple[int, st
 # of UTF-16LE is 2.67x the script, and the command line caps at ~8191
 # characters. So the script goes over the STDIN CHANNEL and a small decoder
 # on the command line puts it on disk and runs it.
-_DECODER = r"""
-$ErrorActionPreference = 'Stop'
-$text = [Console]::In.ReadToEnd()
-$path = Join-Path $env:TEMP 'hermes_remote_task.ps1'
-[IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false))
-& $path
-if (-not $?) { exit 1 }
-"""
+def _ssh_base(host: dict) -> list[str]:
+    return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-i", str(host["key"]), f"{host['user']}@{host['ip']}"]
+
+
+def _scp_base(host: dict) -> list[str]:
+    return ["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+            "-o", "StrictHostKeyChecking=accept-new", "-i", str(host["key"])]
 
 
 def ssh_script(host: dict, script: str, timeout: int = 180) -> tuple[int, str, str]:
     """Run a PowerShell script on the remote, whatever its length.
 
-    The script is piped to the far side and written to a file there, so
-    the size of the script is bounded by the SSH channel and not by the
-    command line. This is the channel real work needs: a one-liner
-    pasted through two shells - bash here, cmd over ssh, PowerShell on the
-    far side - has three layers of quoting between it and the code, and
-    every one of them eats something. A script file has none.
+    The script is UPLOADED and then run, in three short sessions:
+    scp the file, ssh runs it, ssh removes it. That is deliberate.
+
+    The obvious alternative - pipe the script over the SSH channel - is a
+    trap. The far side has to read its stdin to EOF, and when the client
+    gives up first, the remote process is left reading a pipe that will
+    never close: it holds its session, it holds its temp file, and every
+    later connection is starved behind it. A timeout therefore does not
+    cost one run, it costs the channel. An uploaded file has no such
+    failure mode: the run session ends when the script ends, and the file
+    is removed afterwards whether the run worked or not.
+
+    The size of the script is bounded by the transfer, not by the command
+    line - which matters, because a script pasted through two shells
+    (bash here, cmd over ssh, PowerShell on the far side) has three
+    layers of quoting between it and the code, and every one of them
+    eats something. A script file has none.
     """
-    encoded = base64.b64encode(_DECODER.strip().encode("utf-16-le")).decode()
-    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-           "-o", "StrictHostKeyChecking=accept-new",
-           "-i", str(host["key"]), f"{host['user']}@{host['ip']}",
-           "powershell", "-NoProfile", "-EncodedCommand", encoded]
+    import tempfile
+    import uuid
+
+    name = "hermes_task_%s.ps1" % uuid.uuid4().hex[:12]
+    remote_win = r"C:\Users\%s\AppData\Local\Temp\%s" % (host["user"], name)
+    remote_posix = "C:/Users/%s/AppData/Local/Temp/%s" % (host["user"], name)
+
+    local = Path(tempfile.gettempdir()) / name
     try:
-        proc = subprocess.run(cmd, input=script, capture_output=True, text=True,
-                               timeout=timeout, encoding="utf-8", errors="replace")
-    except subprocess.TimeoutExpired:
-        return 124, "", f"the remote script exceeded {timeout}s"
+        local.write_text(script, encoding="utf-8")
+        up = subprocess.run(_scp_base(host) + [str(local), f"{host['user']}@{host['ip']}:{remote_posix}"],
+                            capture_output=True, text=True, timeout=timeout,
+                            encoding="utf-8", errors="replace")
+        if up.returncode != 0:
+            return up.returncode, "", "the upload failed: " + _clean(up.stderr)
+        try:
+            run = subprocess.run(
+                _ssh_base(host) + ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                                   "-File", remote_win],
+                capture_output=True, text=True, timeout=timeout,
+                encoding="utf-8", errors="replace")
+            rc, out, err = run.returncode, _clean(run.stdout), _clean(run.stderr)
+        except subprocess.TimeoutExpired:
+            rc, out, err = 124, "", f"the remote script exceeded {timeout}s"
     except FileNotFoundError:
         return 127, "", "ssh is not installed on this host"
-    return proc.returncode, _clean(proc.stdout), _clean(proc.stderr)
+    finally:
+        try:
+            local.unlink()
+        except OSError:
+            pass
+        # the remote copy goes too, whether the run worked or not
+        subprocess.run(_ssh_base(host) + ["powershell", "-NoProfile", "-Command",
+                                          f"Remove-Item '{remote_win}' -Force -ErrorAction SilentlyContinue"],
+                       capture_output=True, text=True, timeout=60,
+                       encoding="utf-8", errors="replace")
+    return rc, out, err
+
 
 def _clean(text: str) -> str:
     """Drop the CLIXML progress noise PowerShell emits over ssh, and the

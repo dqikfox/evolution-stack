@@ -206,38 +206,73 @@ def test_a_script_that_does_not_exist_is_refused(monkeypatch, tmp_path):
         monkey.undo()
 
 
-def test_a_long_script_travels_over_the_channel_not_the_command_line(monkeypatch):
-    """A base64 blob on the command line hits the Windows limit.
+def test_a_script_is_uploaded_not_piped(monkeypatch):
+    """The script must not travel over the channel as stdin.
 
-    base64 of UTF-16LE is 2.67x the script, and a command line caps at
-    ~8191 characters, so a 4KB script cannot be sent that way. The script
-    is piped to the far side instead, and only a small decoder rides on
-    the command line.
+    The far side has to read its stdin to EOF. When the client gives up
+    first, the remote process is left reading a pipe that will never
+    close: it holds its session, it holds its temp file, and every
+    later connection is starved behind it. A timeout then costs the
+    channel, not just the run. So the script is uploaded, run, and
+    removed - three short sessions, none of them blocking on stdin.
     """
-    captured = {}
+    calls = []
 
     def fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
-        captured["kwargs"] = kwargs
+        calls.append((cmd, kwargs))
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkey = pytest.MonkeyPatch()
     monkey.setattr(hr.subprocess, "run", fake_run)
     try:
-        script = "Write-Host 'a line of work'\n" * 400
-        hr.ssh_script(HOST, script, timeout=5)
+        hr.ssh_script(HOST, "Write-Output 'x'\n", timeout=5)
     finally:
         monkey.undo()
-    encoded = captured["cmd"][captured["cmd"].index("-EncodedCommand") + 1]
-    assert len(encoded) < 2000, "the script went on the command line (%d chars)" % len(encoded)
-    assert captured["kwargs"].get("input") == script, "the script did not travel over stdin"
+
+    for cmd, kwargs in calls:
+        assert kwargs.get("input") is None, "a script was piped over stdin"
+    assert any(c[0][0].lower().endswith("scp") or c[0][0].lower().endswith("scp.exe")
+               for c in calls), "the script was never uploaded"
+    assert any("-File" in c[0] for c in calls), "the uploaded script was never run"
 
 
-def test_the_decoder_writes_the_script_where_it_can_run_it():
-    """The far side has to put the script in a FILE. Piping it into a
-    shell would give it the same quoting problems the channel was built
-    to avoid."""
-    decoder = hr._DECODER
-    assert "ReadToEnd" in decoder
-    assert ".ps1" in decoder
-    assert "WriteAllText" in decoder
+def test_the_remote_copy_is_removed_even_when_the_run_fails(monkeypatch):
+    """A file left on the remote is litter that outlives the tool."""
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if "-File" in cmd:
+            return subprocess.CompletedProcess(cmd, 1, "", "boom")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(hr.subprocess, "run", fake_run)
+    try:
+        rc, out, err = hr.ssh_script(HOST, "Write-Output 'x'\n", timeout=5)
+    finally:
+        monkey.undo()
+    assert rc == 1
+    assert any("Remove-Item" in " ".join(c) for c in calls), "the remote copy was left behind"
+
+
+def test_the_script_name_is_unique_per_run(monkeypatch):
+    """Two runs must not fight over one file name - the loser blocks on
+    the lock and the channel looks broken."""
+    names = []
+
+    def fake_run(cmd, **kwargs):
+        for part in cmd:
+            if part.endswith(".ps1"):
+                names.append(part)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(hr.subprocess, "run", fake_run)
+    try:
+        hr.ssh_script(HOST, "Write-Output 'x'\n", timeout=5)
+        hr.ssh_script(HOST, "Write-Output 'y'\n", timeout=5)
+    finally:
+        monkey.undo()
+    assert names, "no script file was named"
+    assert len(set(names)) == len(names), "two runs shared a file name"
