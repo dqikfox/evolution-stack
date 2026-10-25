@@ -56,6 +56,11 @@ TARGETS = [
         "port": 8650,
         "health": "http://127.0.0.1:8650/health",
         "marker": "nexus-core",
+        # the command that starts a supervisor for this service. It is
+        # used to prove that a SECOND supervisor is refused rather than
+        # fought with.
+        "runner": [r"C:\Users\KING\.cache\nexus-venv\Scripts\python.exe",
+                   r"E:\ultron-memory\nexus-core\run_nexus.py"],
     },
 ]
 
@@ -309,6 +314,41 @@ def check(target: dict) -> list:
                         f"race for the same port")
     else:
         print(f"  {name}: {sups} supervisor chain(s) - clean")
+
+    # --- a second supervisor must be REFUSED, not fought with --------------
+    # A supervisor that cannot tell that another one owns the port will
+    # kill the other's child as an "orphan", and then flap: its own child
+    # loses the bind and exits 3, over and over, with the backoff
+    # climbing. The loser is invisible - whoever waits for the PORT to
+    # answer is answered by the winner, so a restart script declares
+    # success while the supervisor it started is already dead.
+    #
+    # So the contract is not "one chain at the end", it is "the second
+    # supervisor says no and exits".
+    runner = target.get("runner")
+    if runner:
+        try:
+            second = subprocess.run(runner, capture_output=True, text=True,
+                                    timeout=90)
+            out = (second.stdout or "") + (second.stderr or "")
+            refused = "refusing to start a second one" in out
+            if not refused:
+                problems.append(
+                    f"{name}: a second supervisor did not refuse (rc={second.returncode}) - "
+                    f"it would fight the running service for the port")
+            elif second.returncode == 0:
+                problems.append(f"{name}: the refusal exited 0, expected non-zero")
+            else:
+                print(f"  {name}: a second supervisor was refused (rc={second.returncode})")
+        except subprocess.TimeoutExpired:
+            problems.append(f"{name}: a second supervisor did not exit - it served "
+                            f"alongside the first one instead of refusing")
+        if not health_ok(health):
+            problems.append(f"{name}: the running service was disturbed by the "
+                            f"second-supervisor attempt")
+        if supervisor_count(target["marker"]) > 1:
+            problems.append(f"{name}: the second-supervisor attempt left more than "
+                            f"one chain alive")
 
     # --- always put the service back -------------------------------------
     if not health_ok(health):
