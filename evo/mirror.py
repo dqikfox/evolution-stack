@@ -53,6 +53,36 @@ def secret_findings(rel: str) -> list:
     return scan_file(src)
 
 
+def _is_runtime_artefact(p: Path) -> bool:
+    """True for files that are runtime output or accidents, not source.
+
+    The mirror is a PUBLICATION surface, so anything that reaches it ends up
+    in a public repository. These shapes are all things that should never be
+    published, and every one of them was found in the published surface
+    before this rule existed:
+
+      * an extensionless file named with a unix timestamp - the cron
+        runner's per-run output ("1792884829");
+      * a name containing a backtick - a shell-quoting accident
+        ("tailnet_sync.py`");
+      * a ".bak-<date>" suffix - an explicit backup;
+      * a ".log" suffix - runtime logging;
+      * a ".hermes-tmp." prefix - a temporary file.
+    """
+    name = p.name
+    if "`" in name:
+        return True
+    if p.suffix == "" and p.stem.isdigit():
+        return True
+    if ".bak" in p.suffix:
+        return True
+    if p.suffix.lower() == ".log":
+        return True
+    if name.startswith(".hermes-tmp."):
+        return True
+    return False
+
+
 def record(target: str) -> str | None:
     """Copy hermes/<target> into the mirror. Returns the mirrored path.
 
@@ -146,6 +176,13 @@ def record_all() -> list[str]:
                 continue
             if p.suffix in (".pyc", ".pyd", ".so", ".dll", ".exe"):
                 continue      # compiled artefacts are not source
+            if _is_runtime_artefact(p):
+                # The cron runner writes each script run's output as an
+                # extensionless file named with a unix timestamp (e.g.
+                # "1792884829"); backups, logs and shell-quoting accidents
+                # are not source either. Mirroring those publishes transient
+                # junk into a public repository - and some did get committed.
+                continue
             try:
                 rel = p.relative_to(paths.HERMES).as_posix()
             except ValueError:

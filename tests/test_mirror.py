@@ -95,6 +95,22 @@ def test_the_real_surface_has_no_orphans():
     assert not orphans, f"the mirror publishes files that no longer exist: {orphans[:5]}"
 
 
+def test_runtime_artefacts_are_not_published():
+    """The shapes that must never reach a public repository."""
+    artefacts = ["1792884829", "tailnet_sync.py`", "ollama-health.py.bak-20261024",
+                 "bot-restart.log", ".hermes-tmp.T4YGR5"]
+    for name in artefacts:
+        assert mirror._is_runtime_artefact(Path(name)), f"{name} must be treated as an artefact"
+
+
+def test_real_source_is_still_published():
+    """The rule must not eat legitimate source, including extensionless files."""
+    keep = ["SKILL.md", "tailnet_sync.py", "start_tesseract.cmd", "probe_http.py",
+            "anthology.bib.txt", "Makefile", "LICENSE", ".curator_state", ".hub/.ignore"]
+    for name in keep:
+        assert not mirror._is_runtime_artefact(Path(name)), f"{name} is source and must be mirrored"
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(list(globals().items())):
