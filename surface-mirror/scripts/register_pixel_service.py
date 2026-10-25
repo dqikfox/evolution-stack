@@ -33,9 +33,11 @@ PORT_MAP_ENTRY = {
     "start": LAUNCHER,
     "health": HEALTH,
     "status": "up",
-    "note": ("Single detached process, no supervisor. The launcher probes "
-             "/api/state for 'activeCharacter' before it reclaims, and the "
-             "reclaim refuses a port holder that is not ours."),
+    "note": ("Supervised by pixel_supervisor.py, which restarts the studio if it "
+             "dies and refuses to run a second copy (exit code 3). The launcher "
+             "probes /api/state for 'activeCharacter' before it reclaims, and the "
+             "reclaim refuses a port holder that is not ours. The studio reports "
+             "its own supervision in /api/state."),
 }
 
 SERVICES_ENTRY = {
@@ -48,7 +50,9 @@ SERVICES_ENTRY = {
     "critical": False,
     "notes": ("Character studio on the house interpreter (stdlib only; Pillow "
               "optional). Local procedural generation; GPU work happens in "
-              "ComfyUI on demand, so the service itself is cheap to keep up."),
+              "ComfyUI on demand, so the service itself is cheap to keep up. "
+              "Supervised: pixel_supervisor.py restarts it after a crash, "
+              "replaces it if it wedges, and refuses a second supervisor."),
 }
 
 CHANGELOG_ENTRY = {
