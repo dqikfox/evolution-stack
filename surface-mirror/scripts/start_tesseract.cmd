@@ -5,9 +5,21 @@ REM
 REM Exits 0 as soon as :8705 answers 200, so it is safe to call from a
 REM scheduler, the service healer, the Startup folder, or by hand.
 REM
-REM Two things this file exists to get right:
+REM The order in this file is the whole point:
 REM
-REM  1. The server must not inherit the CALLER's stdout. A process started
+REM  1. DEPENDENCIES FIRST. Every tool this launcher needs is checked
+REM     before it touches anything. A launcher that reclaims the port and
+REM     THEN discovers its probe is missing has already destroyed a
+REM     working service in order to report a missing file.
+REM
+REM  2. THE DECISION BEFORE THE DESTRUCTION. service_control.prepare
+REM     probes the service first, then answers one question - is the port
+REM     free, held by an orphan of ours, held by a stranger, or owned by a
+REM     healthy supervised chain - and it only ever destroys something when
+REM     that is the only correct action. A healthy service is never torn
+REM     down to be rebuilt.
+REM
+REM  3. THE SERVER MUST NOT INHERIT THE CALLER'S STDOUT. A process started
 REM     with inheritable handles receives copies of every inheritable handle
 REM     in its parent, so if the parent was started by a caller that captured
 REM     stdout into a pipe (an agent tool, CI, a shell substitution), the
@@ -19,7 +31,7 @@ REM     Python's close_fds=True, which passes an explicit handle-inheritance
 REM     list, so the child inherits nothing but its log file (measured:
 REM     RELEASED the pipe).
 REM
-REM  2. The wait must not be charged PowerShell startup. The probe is a
+REM  4. THE WAIT MUST NOT BE CHARGED POWERSHELL STARTUP. The probe is a
 REM     stdlib urllib call in the project's own interpreter - tens of
 REM     milliseconds, and identical on every host.
 REM
@@ -40,25 +52,12 @@ set PROBE=%LOCALAPPDATA%\hermes\scripts\probe_http.py
 set WAITER=%LOCALAPPDATA%\hermes\scripts\wait_for_http.py
 set RECLAIMER=%LOCALAPPDATA%\hermes\scripts\service_control.py
 set TESS_HEALTH=http://127.0.0.1:%TESS_PORT%/health
+REM The marker names our own process. The house tooling identifies a
+REM supervisor by a command line that ENDS with the script name, and a
+REM leftover by the marker appearing anywhere in the command line.
+set TESS_MARKER=TESSERACT\start.py
 
-echo [tesseract] checking port %TESS_PORT%...
-REM An ORPHAN - a killed supervisor's surviving child - answers the
-REM port with no supervisor above it. It is unsupervised, it may be
-REM running stale code, and nothing restarts it if it dies. The
-REM launcher used to accept that as "already up" and never start a
-REM supervisor, so the service only came back when someone cleared
-REM the orphan by hand. Reclaim it first, then decide.
-"%TESS_PY%" "%RECLAIMER%" reclaim --port %TESS_PORT% --marker "TESSERACT\start.py"
-if errorlevel 1 (
-    echo [tesseract] FAILED: could not reclaim :%TESS_PORT%
-    exit /b 1
-)
-"%TESS_PY%" "%PROBE%" "%TESS_HEALTH%" 3
-if not errorlevel 1 (
-    echo [tesseract] already up on :%TESS_PORT% - supervised, nothing to do.
-    exit /b 0
-)
-
+REM --- 1. DEPENDENCIES FIRST. Nothing is destroyed before this block passes.
 if not exist "%TESS_PY%" (
     echo [tesseract] FAILED: interpreter missing at %TESS_PY%
     exit /b 1
@@ -80,6 +79,20 @@ if not exist "%PROBE%" (
     exit /b 1
 )
 if not exist "%LOCALAPPDATA%\hermes\logs" mkdir "%LOCALAPPDATA%\hermes\logs" 2>nul
+
+REM --- 2. THE DECISION. The service is probed before anything is destroyed.
+echo [tesseract] checking port %TESS_PORT%...
+"%TESS_PY%" "%RECLAIMER%" prepare --port %TESS_PORT% --marker "%TESS_MARKER%" --health "%TESS_HEALTH%"
+set RC=%ERRORLEVEL%
+if "%RC%"=="2" (
+    echo [tesseract] already up on :%TESS_PORT% - healthy and supervised, nothing to do.
+    exit /b 0
+)
+if "%RC%"=="1" (
+    echo [tesseract] FAILED: :%TESS_PORT% is held by a process that is not ours
+    exit /b 1
+)
+REM RC=0: the port is free, or an orphan of ours was reclaimed.
 
 echo [tesseract] starting (server log: %TESS_LOG%)...
 cd /d "%TESS_PROJECT%"

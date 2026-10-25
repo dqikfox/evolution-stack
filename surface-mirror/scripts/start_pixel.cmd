@@ -5,9 +5,18 @@ REM
 REM Exits 0 as soon as :8520 answers, so it is safe to call from a scheduler,
 REM the service healer, the Startup folder, or by hand.
 REM
-REM Two things this file exists to get right:
+REM The order in this file is the whole point:
 REM
-REM  1. The server must not inherit the CALLER's stdout. A process started
+REM  1. DEPENDENCIES FIRST. Every tool is checked before the port is
+REM     touched, so a launcher with a missing probe cannot destroy a
+REM     working service and only then report the missing file.
+REM
+REM  2. THE DECISION BEFORE THE DESTRUCTION. The probe checks the BODY, so
+REM     "something answered 200 on :8520" is not mistaken for "Pixel
+REM     answered". An orphan of ours is replaced, a stranger is refused,
+REM     and a healthy supervised studio is left completely alone.
+REM
+REM  3. THE SERVER MUST NOT INHERIT THE CALLER'S STDOUT. A process started
 REM     with inheritable handles receives copies of every inheritable handle
 REM     in its parent, so if the parent was started by a caller that captured
 REM     a pipe, the child holds a duplicate of that pipe. When the parent
@@ -15,11 +24,11 @@ REM     exits, the child's writes hit a CLOSED pipe. The spawner is called
 REM     with explicit log files and no inherited handles for exactly this
 REM     reason.
 REM
-REM  2. The wait must not be charged PowerShell startup. The probe is a
+REM  4. THE WAIT MUST NOT BE CHARGED POWERSHELL STARTUP. The probe is a
 REM     stdlib urllib call in the project's own interpreter - tens of
 REM     milliseconds, and identical on every host.
 REM
-REM  3. The studio is started UNDER A SUPERVISOR. Pixel used to be a single
+REM  5. THE STUDIO IS STARTED UNDER A SUPERVISOR. Pixel used to be a single
 REM     detached process, so a crash left the studio down until somebody
 REM     noticed. pixel_supervisor.py restarts it, replaces it if it wedges,
 REM     and refuses to run a second copy (exit code 3).
@@ -56,25 +65,7 @@ REM command line - which is why the studio is started with
 REM "--supervised-by pixel_supervisor.py".
 set PIXEL_MARKER=pixel_supervisor.py
 
-REM Probe BEFORE reclaiming. Reclaiming is destructive, so a launcher that
-REM reclaims first restarts a healthy service every time it is called.
-REM The probe checks the BODY, so "something answered 200 on :8520" is not
-REM mistaken for "Pixel answered".
-"%PIXEL_PY%" "%PROBE%" "%PIXEL_HEALTH%" 3 --contains "activeCharacter"
-if not errorlevel 1 (
-    echo [pixel] already up on :%PIXEL_PORT% - Pixel answered /api/state, nothing to do.
-    exit /b 0
-)
-
-REM The port is not answering. Clear a leftover Pixel that is still holding
-REM it, but never a stranger: the reclaim refuses a holder that does not
-REM carry our marker.
-"%PIXEL_PY%" "%RECLAIMER%" reclaim --port %PIXEL_PORT% --marker "%PIXEL_MARKER%"
-if errorlevel 1 (
-    echo [pixel] FAILED: could not reclaim :%PIXEL_PORT%
-    exit /b 1
-)
-
+REM --- 1. DEPENDENCIES FIRST. Nothing is destroyed before this block passes.
 if not exist "%PIXEL_PY%" (
     echo [pixel] FAILED: interpreter missing at %PIXEL_PY%
     exit /b 1
@@ -101,6 +92,20 @@ if not exist "%PROBE%" (
 )
 if not exist "%LOCALAPPDATA%\hermes\logs" mkdir "%LOCALAPPDATA%\hermes\logs" 2>nul
 if not exist "%PIXEL_PROJECT%\logs" mkdir "%PIXEL_PROJECT%\logs" 2>nul
+
+REM --- 2. THE DECISION. The service is probed before anything is destroyed.
+echo [pixel] checking port %PIXEL_PORT%...
+"%PIXEL_PY%" "%RECLAIMER%" prepare --port %PIXEL_PORT% --marker "%PIXEL_MARKER%" --health "%PIXEL_HEALTH%" --contains "activeCharacter"
+set RC=%ERRORLEVEL%
+if "%RC%"=="2" (
+    echo [pixel] already up on :%PIXEL_PORT% - Pixel answered /api/state, nothing to do.
+    exit /b 0
+)
+if "%RC%"=="1" (
+    echo [pixel] FAILED: :%PIXEL_PORT% is held by a process that is not ours
+    exit /b 1
+)
+REM RC=0: the port is free, or an orphan of ours was reclaimed.
 
 REM The supervisor takes its configuration from the environment, not from
 REM command-line arguments: the house tooling recognises a supervisor by a

@@ -259,6 +259,61 @@ def report(port, marker):
     return False
 
 
+def ensure(port, marker):
+    """Decide what a launcher must do about the port - and take the
+    destructive action only when it is the only correct action.
+
+    A launcher that reclaims first is destructive before it knows anything:
+    a healthy, supervised service gets torn down and restarted on every
+    call, and a launcher whose own tools are missing kills the service and
+    THEN reports the missing tool. So the port is inspected first and the
+    answer is a decision, not a boolean:
+
+        0  - a live supervisor owns the port; do nothing
+        10 - the port was held by an ORPHAN; it has been reclaimed
+        11 - nothing holds the port
+        1  - a stranger holds the port; it must not be stolen
+
+    An orphan is ours to replace: it is unsupervised, it may be running
+    stale code, and nothing restarts it when it dies. A stranger is not
+    ours at all, and killing it would take out an unrelated process.
+    """
+    lp = listener_pid(port)
+    if not lp:
+        print(f"  :{port} is free - the launcher must start it")
+        return 11
+    chain = chain_of(lp)
+    chain_pids = {p["ProcessId"] for p in chain}
+    sups = supervisor_pids(marker)
+    roots = [p for p in sups if p["ParentProcessId"] not in
+             {s["ProcessId"] for s in sups}]
+    if any(p["ProcessId"] in chain_pids for p in roots):
+        print(f"  :{port} is owned by a live supervisor "
+              f"({[p['ProcessId'] for p in roots]}) - nothing to reclaim")
+        return 0
+    print(f"  :{port} is held by an ORPHAN (no supervisor above it): "
+          f"{[p['ProcessId'] for p in chain]}")
+    holder = next((p for p in chain if p["ProcessId"] == lp), {})
+    if not (command_line_matches_marker(holder.get("CommandLine") or "", marker)
+            or chain_belongs_to_service(chain, marker)):
+        # Something that is NOT our service holds the port. Killing it
+        # would take out an unrelated process, so the reclaim refuses and
+        # the launcher reports the conflict instead of stealing the port.
+        print(f"  refusing to touch it: the holder is not ours "
+              f"(no {marker!r} in its command line)")
+        return 1
+    for p in chain:
+        subprocess.run(["taskkill", "/PID", str(p["ProcessId"]), "/F", "/T"],
+                       capture_output=True, text=True)
+    for _ in range(20):
+        if not listener_pid(port):
+            print(f"  :{port} reclaimed")
+            return 10
+        time.sleep(0.5)
+    print(f"  :{port} would not release")
+    return 1
+
+
 def reclaim(port, marker):
     """Clear an ORPHAN holding the port, so a supervisor can be started.
 
@@ -272,48 +327,113 @@ def reclaim(port, marker):
     terminated and the port is freed. An unrelated process on the port is
     never touched.
     """
+    return ensure(port, marker) != 1
+
+
+def _probe(url, contains=None, timeout=6):
+    """Is the SERVICE answering, or merely something on the port?
+
+    A body check is what separates them: a stray process can answer 200
+    on the same port, and a launcher that believes it is the service will
+    report the service as healthy when it is not.
+    """
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            body = resp.read(65536).decode("utf-8", "replace")
+    except Exception as exc:
+        return False, f"no answer ({type(exc).__name__})"
+    if contains and contains not in body:
+        return False, "answered, but not our service"
+    return True, "healthy"
+
+
+def prepare(port, marker, health=None, contains=None):
+    """Put the port in a state a launcher can start from, and say which.
+
+    The decision the launcher needs is one of three things:
+
+        0  - start it: the port is free, an orphan was reclaimed, or a
+             supervised-but-silent chain was stopped
+        1  - refuse: a stranger holds the port and must not be stolen
+        2  - leave it alone: it is healthy AND supervised
+
+    Order matters. The tools are checked by the launcher before it calls
+    this. The SERVICE is probed before anything is destroyed, so a healthy
+    service is never torn down to be rebuilt. And a supervised but silent
+    chain is stopped rather than duplicated - two generations of one
+    service is worse than one broken one.
+    """
+    healthy, why = (False, "not probed")
+    if health:
+        healthy, why = _probe(health, contains)
+        print(f"  probe {health}: {why}")
+
     lp = listener_pid(port)
     if not lp:
-        print(f"  :{port} is free - nothing to reclaim")
-        return True
+        print(f"  :{port} is free - the launcher must start it")
+        return 0
     chain = chain_of(lp)
     chain_pids = {p["ProcessId"] for p in chain}
-    roots = [p for p in supervisor_pids(marker) if p["ParentProcessId"] not in
-             {s["ProcessId"] for s in supervisor_pids(marker)}]
-    if any(p["ProcessId"] in chain_pids for p in roots):
-        print(f"  :{port} is owned by a live supervisor "
-              f"({[p['ProcessId'] for p in roots]}) - nothing to reclaim")
-        return True
-    print(f"  :{port} is held by an ORPHAN (no supervisor above it): "
-          f"{[p['ProcessId'] for p in chain]}")
+    sups = supervisor_pids(marker)
+    roots = [p for p in sups if p["ParentProcessId"] not in
+             {s["ProcessId"] for s in sups}]
+    supervised = any(p["ProcessId"] in chain_pids for p in roots)
+
+    if supervised:
+        if healthy:
+            print(f"  :{port} is healthy and supervised by "
+                  f"{[p['ProcessId'] for p in roots]} - leave it alone")
+            return 2
+        print(f"  :{port} is supervised by {[p['ProcessId'] for p in roots]} "
+              f"but not answering - stopping the chain so it can be replaced")
+        stop(marker, port)
+        for _ in range(20):
+            if not listener_pid(port):
+                break
+            time.sleep(0.5)
+        if listener_pid(port):
+            print(f"  :{port} would not release")
+            return 1
+        print(f"  :{port} released - the launcher must start it")
+        return 0
+
+    # unsupervised: an orphan of ours, or a stranger
     holder = next((p for p in chain if p["ProcessId"] == lp), {})
     if not (command_line_matches_marker(holder.get("CommandLine") or "", marker)
             or chain_belongs_to_service(chain, marker)):
-        # Something that is NOT our service holds the port. Killing it
-        # would take out an unrelated process, so the reclaim refuses and
-        # the launcher reports the conflict instead of stealing the port.
-        print(f"  refusing to touch it: the holder is not ours "
+        print(f"  refusing to touch :{port} - the holder is not ours "
               f"(no {marker!r} in its command line)")
-        return False
-    for p in chain:
-        subprocess.run(["taskkill", "/PID", str(p["ProcessId"]), "/F", "/T"],
+        return 1
+    print(f"  :{port} is held by an ORPHAN of ours: "
+          f"{[p['ProcessId'] for p in chain]} - reclaiming it")
+    for proc in chain:
+        subprocess.run(["taskkill", "/PID", str(proc["ProcessId"]), "/F", "/T"],
                        capture_output=True, text=True)
     for _ in range(20):
         if not listener_pid(port):
-            print(f"  :{port} reclaimed")
-            return True
+            print(f"  :{port} reclaimed - the launcher must start it")
+            return 0
         time.sleep(0.5)
     print(f"  :{port} would not release")
-    return False
+    return 1
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["stop", "start", "restart", "report", "reclaim"])
+    ap.add_argument("action", choices=["stop", "start", "restart", "report", "reclaim", "ensure", "prepare"])
     ap.add_argument("--marker", default="run_nexus.py")
     ap.add_argument("--launcher")
     ap.add_argument("--port", type=int, default=8650)
+    ap.add_argument("--health")
+    ap.add_argument("--contains")
     a = ap.parse_args()
+    if a.action == "prepare":
+        print(f"=== preparing :{a.port} (marker={a.marker!r}) ===")
+        return prepare(a.port, a.marker, a.health, a.contains)
+    if a.action == "ensure":
+        print(f"=== deciding on :{a.port} (marker={a.marker!r}) ===")
+        return ensure(a.port, a.marker)
     if a.action == "reclaim":
         print(f"=== reclaiming :{a.port} (marker={a.marker!r}) ===")
         ok = reclaim(a.port, a.marker)
