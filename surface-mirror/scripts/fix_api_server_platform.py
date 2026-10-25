@@ -84,12 +84,21 @@ def vault_reachable() -> bool:
     try:
         result = subprocess.run([op, "item", "get", PROBE_ITEM, "--vault", VAULT,
                                  "--format", "json"],
-                                capture_output=True, text=True, timeout=60, env=op_env())
+                                capture_output=True, text=True, timeout=60, env=op_env(),
+                                encoding="utf-8", errors="replace")
     except Exception as exc:
         log(f"the probe failed to run: {exc}")
         return False
     if result.returncode != 0:
         log("the vault is still rate-limited")
+        return False
+    # Belt and braces: a CLI variant that exits 0 while printing an error
+    # would make this probe lie, and a lie here restarts a healthy gateway
+    # for nothing. The 1Password CLI does exit 1 on a rate limit (verified),
+    # so this is the second lock on the same door.
+    noise = f"{result.stdout or ''}\n{result.stderr or ''}".upper()
+    if "TOO MANY REQUESTS" in noise or "RATE-LIMITED" in noise or "[ERROR]" in noise:
+        log("the vault answered with an error - treating it as unavailable")
         return False
     return True
 
