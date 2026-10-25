@@ -280,6 +280,27 @@ defects found and the fixes, is in
 - **Read the service's OWN logs** - the defects that matter (a port that
   cannot be bound, a record written twice) are visible in the log file and
   invisible to a passing test suite.
+- **"The commit API returns 404" is NOT "the content is gone"** - a commit can
+  be unreachable from every ref and still be served by the contents API
+  during GitHub's grace period for unreachable objects. The test that counts
+  is fetching the FILE at the old ref. Verifying a history rewrite with the
+  commits API alone is a false all-clear, and it is how a rewritten
+  repository can still be serving the literal it was rewritten to remove.
+- **A scanner that reports "0 findings" must also report WHAT IT SCANNED** -
+  a repository that could not be swept produced exactly the same output as a
+  clean one, and that is the most dangerous output a scanner can give. Print
+  the commit count, refuse to report a count for a repo it could not read,
+  and exit non-zero when any repo was not swept.
+- **`git filter-repo` REMOVES the `origin` remote** as a safety measure, and
+  with it the remote-tracking ref. Re-add the remote before pushing, or the
+  push fails with "'origin' does not appear to be a git repository" and the
+  rewrite looks lost. The lease must be ONE argument
+  (`--force-with-lease=main:<sha>`), not two.
+- **A test must not depend on a stale environment variable** - a guard that
+  read `os.environ["NEXUS_DB_PATH"]` to protect the live corpus was itself
+  the thing that broke the moment the stale value was cleaned up. Read it
+  with a default, and treat an unresolvable path as harmless.
+- **A supervisor RESTARTS its child, so kill the supervisor FIRST** — and check
   for an ORPHAN still holding the port: a supervisor that died while
   respawning leaves the child serving, the launcher calls the service
   "already up" and never starts a supervisor. `hermes/scripts/service_control.py`

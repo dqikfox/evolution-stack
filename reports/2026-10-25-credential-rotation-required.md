@@ -41,9 +41,44 @@ Values are **[REDACTED]**. Their locations are unchanged:
 - The NEXUS Git history was rewritten (`git filter-repo --replace-text`) and
   force-pushed with a lease. The pre-rewrite head `d4631e3`, the redaction
   commit `7581be5` and two other old SHAs all return **HTTP 404** on the
-  GitHub API — the old content is not fetchable.
+  GitHub *commits* API.
+- The history was rewritten **twice more** on 2026-10-25, because the
+  *commits* API is not the right test. A commit object can be gone from
+  every ref and still be served by the *contents* API for the grace period
+  GitHub allows for unreachable objects. Fetching the **file** at the old
+  ref is the test that counts:
+  - NEXUS `7aa628b3` — `tests/test_guard.py` still served 2 secret-shaped
+    literals. History rewritten; head is now `2e14335`.
+  - EVOLUTION `ff5c7936` and 11 other commits — `tests/test_secrets.py`
+    still served a literal PEM header. History rewritten; head is now
+    `aa07211`. This repo is **public**.
+  - After the rewrite, `git rev-list --all` over both repositories returns
+    **0 findings** — including the live `fix/working-memory-durability`
+    branch on NEXUS, which carries none.
+- The history sweep now reports **how many commits it examined**, refuses
+  to report a finding count for a repository it could not read, and exits
+  non-zero if any repository was not swept. "0 findings" and "nothing was
+  scanned" must never look the same.
 - The corrected history sweep reports **0 findings** across TESSERACT,
-  Pixel, Lummings, Pathway and NEXUS.
+  Pixel, Lummings, Pathway, NEXUS and EVOLUTION.
+
+## Residual: GitHub's unreachable-object grace period
+
+The two rewrites removed the literals from every reachable ref, and the
+local history is clean. GitHub, however, continues to serve those old
+blobs **by SHA** for a period after the force-push, because unreachable
+objects are retained before garbage collection. The values are synthetic
+test fixtures, not live credentials, but they are still retrievable:
+
+- `dqikfox/NEXUS` @ `7aa628b3` → `tests/test_guard.py` (2 literals)
+- `dqikfox/evolution-stack` @ `ff5c7936` → `tests/test_secrets.py` (1 PEM)
+
+The supported remedy is a **GitHub Support** request to purge unreachable
+objects (the "Removing sensitive data from a repository" procedure). The
+guaranteed remedy for the public repository is to delete and re-create it,
+which resets the object store — at the cost of issues, stars, watchers and
+the repository URL. **Neither is done automatically here**; both are
+operator decisions, and the support request is the one worth making.
 - A store-time guard was added: `core/guard.py`, called from `create_note`.
   A credential entering the corpus is now replaced with a pointer and the
   note is tagged `redacted:secrets`. Ordinary content is untouched.
@@ -89,3 +124,10 @@ Two lessons are worth keeping in mind when the next one is found:
 - A scanner that has never scanned a file is a scanner that has never been
   tested. The sweep reported clean for weeks because `git ls-tree` quoted
   every non-ASCII path, and the suffix filter skipped all of them.
+- **"The commit API returns 404" is not "the content is gone".** Fetch the
+  file at the old ref. A commit can be unreachable and still be served.
+- A scanner that reports "0 findings" must also report **what it scanned**,
+  or an unscanned repository is indistinguishable from a clean one.
+- `git filter-repo` **removes the `origin` remote** as a safety measure.
+  Re-add it before pushing, or the push fails with "'origin' does not
+  appear to be a git repository" and the rewrite looks lost.
