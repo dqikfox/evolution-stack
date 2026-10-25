@@ -105,6 +105,44 @@ def ssh_command(host: dict, remote_ps: str, timeout: int = 120) -> tuple[int, st
     return proc.returncode, stdout, stderr
 
 
+# A script that travels on the command line hits the Windows limit: base64
+# of UTF-16LE is 2.67x the script, and the command line caps at ~8191
+# characters. So the script goes over the STDIN CHANNEL and a small decoder
+# on the command line puts it on disk and runs it.
+_DECODER = r"""
+$ErrorActionPreference = 'Stop'
+$text = [Console]::In.ReadToEnd()
+$path = Join-Path $env:TEMP 'hermes_remote_task.ps1'
+[IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false))
+& $path
+if (-not $?) { exit 1 }
+"""
+
+
+def ssh_script(host: dict, script: str, timeout: int = 180) -> tuple[int, str, str]:
+    """Run a PowerShell script on the remote, whatever its length.
+
+    The script is piped to the far side and written to a file there, so
+    the size of the script is bounded by the SSH channel and not by the
+    command line. This is the channel real work needs: a one-liner
+    pasted through two shells - bash here, cmd over ssh, PowerShell on the
+    far side - has three layers of quoting between it and the code, and
+    every one of them eats something. A script file has none.
+    """
+    encoded = base64.b64encode(_DECODER.strip().encode("utf-16-le")).decode()
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+           "-o", "StrictHostKeyChecking=accept-new",
+           "-i", str(host["key"]), f"{host['user']}@{host['ip']}",
+           "powershell", "-NoProfile", "-EncodedCommand", encoded]
+    try:
+        proc = subprocess.run(cmd, input=script, capture_output=True, text=True,
+                               timeout=timeout, encoding="utf-8", errors="replace")
+    except subprocess.TimeoutExpired:
+        return 124, "", f"the remote script exceeded {timeout}s"
+    except FileNotFoundError:
+        return 127, "", "ssh is not installed on this host"
+    return proc.returncode, _clean(proc.stdout), _clean(proc.stderr)
+
 def _clean(text: str) -> str:
     """Drop the CLIXML progress noise PowerShell emits over ssh, and the
     client's own post-quantum warning.
@@ -359,14 +397,15 @@ foreach ($p in @($running)) { "  pid=" + $p.ProcessId + " session=" + $p.Session
 def cmd_script(host: dict, path: Path, timeout: int) -> int:
     """Run a local PowerShell script on the remote.
 
-    This is the channel real work needs. A one-liner pasted through two
-    shells - bash here, cmd over ssh, PowerShell on the far side - has
-    three layers of quoting between it and the code, and every one of
-    them eats something. A script file has none.
+    The script travels over the SSH channel, so its length is not a
+    limit: a script pasted through two shells - bash here, cmd over ssh,
+    PowerShell on the far side - has three layers of quoting between it
+    and the code, and every one of them eats something. A script file has
+    none.
     """
     if not path.is_file():
         raise SystemExit(f"no such script: {path}")
-    rc, out, err = ssh_command(host, path.read_text(encoding="utf-8", errors="replace"),
+    rc, out, err = ssh_script(host, path.read_text(encoding="utf-8", errors="replace"),
                                timeout=timeout)
     if out:
         print(out)

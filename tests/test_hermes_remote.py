@@ -204,3 +204,40 @@ def test_a_script_that_does_not_exist_is_refused(monkeypatch, tmp_path):
             hr.cmd_script(HOST, tmp_path / "nope.ps1", timeout=5)
     finally:
         monkey.undo()
+
+
+def test_a_long_script_travels_over_the_channel_not_the_command_line(monkeypatch):
+    """A base64 blob on the command line hits the Windows limit.
+
+    base64 of UTF-16LE is 2.67x the script, and a command line caps at
+    ~8191 characters, so a 4KB script cannot be sent that way. The script
+    is piped to the far side instead, and only a small decoder rides on
+    the command line.
+    """
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(hr.subprocess, "run", fake_run)
+    try:
+        script = "Write-Host 'a line of work'\n" * 400
+        hr.ssh_script(HOST, script, timeout=5)
+    finally:
+        monkey.undo()
+    encoded = captured["cmd"][captured["cmd"].index("-EncodedCommand") + 1]
+    assert len(encoded) < 2000, "the script went on the command line (%d chars)" % len(encoded)
+    assert captured["kwargs"].get("input") == script, "the script did not travel over stdin"
+
+
+def test_the_decoder_writes_the_script_where_it_can_run_it():
+    """The far side has to put the script in a FILE. Piping it into a
+    shell would give it the same quoting problems the channel was built
+    to avoid."""
+    decoder = hr._DECODER
+    assert "ReadToEnd" in decoder
+    assert ".ps1" in decoder
+    assert "WriteAllText" in decoder
