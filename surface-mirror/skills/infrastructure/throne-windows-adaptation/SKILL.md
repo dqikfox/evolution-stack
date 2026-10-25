@@ -339,6 +339,24 @@ The `api_server` platform exposes an OpenAI-compatible API on `http://127.0.0.1:
 2. `gateway.platforms.api_server.enabled: true` in `config.yaml`
 3. Gateway restart
 
+**Better: map it from the vault instead of writing a plaintext copy.** The 1Password source is a MAPPED source - the config carries an explicit `ENV_VAR -> op://vault/item/field` map, and the gateway injects the resolved value at start:
+
+```yaml
+secrets:
+  onepassword:
+    enabled: true
+    env:
+      API_SERVER_KEY: op://credentials/API_SERVER_KEY/credential
+```
+
+With that in place the key never touches disk as plaintext, and the `extra.key: env:API_SERVER_KEY` stanza in the platform resolves it. **A platform that points at `env:NAME` with no mapping for NAME simply refuses to start, and nothing says so** - the symptom is a red card on the TESSERACT dashboard and a dead port. Check the map before blaming the adapter.
+
+**The rate-limit discipline (this bites hard):** EVERY `hermes` CLI call re-resolves EVERY mapped secret. A burst of CLI calls therefore costs one read per key per call, and 1Password rate-limits the client - after which every read fails, including the one you need. Rules:
+
+- Probe the vault with ONE read before doing anything that resolves the whole map.
+- Never restart a healthy gateway while the vault is limited: a restart re-resolves everything, so it would take working platforms down to fix one broken one.
+- `fix_api_server_platform.py` implements exactly this - one probe, then the restart, then the verification - and leaves the running gateway alone until the vault answers.
+
 **Quick enable:**
 ```bash
 # 1. Generate a key and append to .env
