@@ -244,6 +244,13 @@ defects found and the fixes, is in
   `/api/ask` then serves the test output as knowledge. Five notes per run had
   been accumulating for weeks. Give the suite its own corpus
   (`NEXUS_CORPUS_DIR`) and make a test that writes delete what it wrote.
+- **A test harness that lives in scratch is a hazard, not a test** — the scratch
+  `launcher_e2e.py` waited 90s for a launcher whose own budget is 180s, so it
+  reported "LAUNCHER NEVER EXITED" on a launcher that was working, and it killed
+  processes by PID in a live stack. Put the contract in the repo
+  (`tests/test_launchers.py`), make the deadline EXCEED the implementation's
+  stated budget, always restore the service, and assert exactly one supervisor
+  chain afterwards. A test that can leave a service down is not a test.
 - **A supervisor RESTARTS its child, so kill the supervisor FIRST** — and check
   for an ORPHAN still holding the port: a supervisor that died while
   respawning leaves the child serving, the launcher calls the service
