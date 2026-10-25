@@ -264,6 +264,16 @@ def scan_host(ip: str) -> dict | None:
             "adb": tcp_open(ip, ADB_PORT),
         },
     }
+    # Extra evidence ports: a real device on this LAN shows at least one
+    # of them open, while the router's answer to every address in the
+    # subnet shows none.
+    info["evidence_ports"] = {
+        "http": tcp_open(ip, 80),
+        "https": tcp_open(ip, 443),
+        "netbios": tcp_open(ip, 139),
+        "printer": tcp_open(ip, 631),
+        "raw9100": tcp_open(ip, 9100),
+    }
     return info
 
 def scan_lan() -> list[dict]:
@@ -566,7 +576,7 @@ def render_markdown(inventory: dict) -> str:
 
         "",
 
-        f"**LAN hosts:** {len(inventory['lan'])} online",
+        f"**LAN hosts:** {len(inventory['lan'])} reachable",
 
         f"**Tailscale peers:** {len(inventory['tailnet'])} known",
 
@@ -574,15 +584,17 @@ def render_markdown(inventory: dict) -> str:
 
         f"**Mount attempts:** {len(inventory['mounts'])}",
 
+        f"**Bare ping responders (no device evidence):** {inventory.get('lan_responders', 0)}",
+
         "",
 
         "## LAN",
 
         "",
 
-        "| IP | SMB | SSH | ADB |",
+        "| IP | Host | SMB | SSH | ADB |",
 
-        "|---|---|---|---|",
+        "|---|---|---|---|---|",
 
     ]
 
@@ -590,13 +602,17 @@ def render_markdown(inventory: dict) -> str:
 
         p = h["ports"]
 
-        lines.append(f"| {h['ip']} | {'✓' if p['smb'] else '·'} | {'✓' if p['ssh'] else '·'} | {'✓' if p['adb'] else '·'} |")
+        lines.append(f"| {h['ip']} | {h.get('known_as', '')} | {'✓' if p['smb'] else '·'} | {'✓' if p['ssh'] else '·'} | {'✓' if p['adb'] else '·'} |")
 
     lines += ["", "## Tailscale", ""]
 
+    lines.append("| Host | IP | OS | Status | Last seen |")
+
+    lines.append("|---|---|---|---|---|")
+
     for d in inventory["tailnet"]:
 
-        lines.append(f"- **{d.get('name','?')}** ({d.get('ip','?')}) — {d.get('os','?')} — {'🟢 online' if d.get('online') else '⚫ offline'}")
+        lines.append(f"| {d.get('name','?')} | {d.get('ip','?')} | {d.get('os','?')} | {'online' if d.get('online') else '⚫ offline'}")
 
     lines += ["", "## Local", ""]
 
@@ -648,6 +664,26 @@ def scan_once() -> dict:
 
     arp = arp_table()
 
+    # The router answers ping for every address in the subnet (proxy ARP),
+    # so a ping alone made 253 of 254 addresses look like hosts. The
+    # giveaway is the MAC: every proxy-ARP answer carries the gateway's
+    # MAC. Those entries are counted separately instead of being listed
+    # as devices.
+    gw_mac = arp.get("192.168.4.1", "")
+
+    if not gw_mac and arp:
+
+        # fall back to the most common MAC in the table
+        counts: dict[str, int] = {}
+
+        for mac in arp.values():
+
+            counts[mac] = counts.get(mac, 0) + 1
+
+        gw_mac = max(counts, key=counts.get) if counts else ""
+
+    proxy_arp = 0
+
     for h in lan:
 
         if h["ip"] in arp:
@@ -660,6 +696,32 @@ def scan_once() -> dict:
 
                 h["known_as"] = KNOWN_HOSTS[oui]
 
+            if gw_mac and h["mac"] == gw_mac and h["ip"] != "192.168.4.1":
+
+                h["proxy_arp"] = True
+
+                proxy_arp += 1
+
+    # A device has evidence. A bare responder - the router answering for
+    # every address in the subnet - has none: no MAC in the ARP cache, no
+    # known OUI, and nothing listening on any probed port. Counting those
+    # as hosts reported 253 devices on a subnet that has a handful.
+    def _is_device(h: dict) -> bool:
+        if h.get("mac"):
+            return True
+        if h.get("known_as"):
+            return True
+        if any(h.get("ports", {}).values()):
+            return True
+        return any(h.get("evidence_ports", {}).values())
+
+    real_lan = [h for h in lan if _is_device(h)]
+
+    responders = [h for h in lan if not _is_device(h)]
+
+    print(f"[discovery] lan: {len(real_lan)} device(s) with evidence, "
+          f"{len(responders)} bare ping responder(s)", file=sys.stderr)
+
     mounts = apply_mount_rules(lan + tailnet)
 
     inventory = {
@@ -668,13 +730,17 @@ def scan_once() -> dict:
 
         "host": socket.gethostname(),
 
-        "lan": lan,
+        "lan": real_lan,
+
+        "lan_responders": len(responders),
 
         "tailnet": tailnet,
 
         "local": local,
 
         "mounts": mounts,
+
+        "lan_scan_raw": len(lan),
 
     }
 

@@ -23,6 +23,8 @@ trusted.
 | Notion API credential | NEXUS corpus (note, SQLite, Chroma, Git history) | **still accepted by Notion (HTTP 200)** | **ROTATE** |
 | Telegram bot token #1 | NEXUS corpus | **still accepted by Telegram (HTTP 200)** | **ROTATE** |
 | Telegram bot token #2 | NEXUS corpus | **still accepted by Telegram (HTTP 200)** | **ROTATE** |
+| DeepSeek API key | NEXUS corpus (note, SQLite, Chroma) | **still accepted by DeepSeek (HTTP 200)** - removed locally 2026-10-25 | **ROTATE** |
+| Telegram bot token #3 (`@Ultron420bot`) | NEXUS corpus (5 notes, SQLite, Chroma) | **still accepted by Telegram (HTTP 200)** - removed locally 2026-10-25 | **ROTATE** |
 | Twilio account credential | NEXUS corpus | rejected by Twilio (HTTP 401) | rotate if the account is still used |
 | n8n API credential | NEXUS corpus | rejected by n8n (HTTP 401) | rotate if the account is still used |
 
@@ -131,3 +133,82 @@ Two lessons are worth keeping in mind when the next one is found:
 - `git filter-repo` **removes the `origin` remote** as a safety measure.
   Re-add it before pushing, or the push fails with "'origin' does not
   appear to be a git repository" and the rewrite looks lost.
+
+
+## Second incident, same day: the redaction that redacted the label
+
+The first pass replaced the *pointer* to each credential - the text
+`[DEEPSEEK_API_KEY]` - and left the credential value in place. A scan for
+the provider prefix found nothing, so the corpus reported clean while the
+value was still stored, still indexed, and still live.
+
+**The shape is the evidence.** A credential is a provider prefix followed
+by a long token; searching for the prefix alone proves nothing, because
+the prefix was exactly what the first pass removed.
+
+Two credentials were confirmed live by provider verdict (HTTP 200 from
+the provider, value never printed) and then removed from all three
+surfaces: the note file, the SQLite body, and the Chroma document.
+
+- DeepSeek API key: **still accepted by the provider (HTTP 200)** -
+  removed locally, **ROTATE**.
+- Telegram bot token (`@Ultron420bot`): **still accepted by Telegram
+  (HTTP 200)** - removed locally, **ROTATE**.
+
+A blanket guard backfill was rejected: it flagged ordinary words
+(`PASSED`, `Token`, `passman`). Targeted, evidence-backed redaction is
+the rule.
+
+### The bug that hid it
+
+`index_note()` accepted a note id and looked it up with `get_note()`,
+which keys on the **slug**. Passing an id returned `False` - silently.
+The reindex therefore reported success while the stale vector document -
+with the secret in it - stayed in the index. Fixed in NEXUS `6058bf9`:
+look up by id first, fall back to the slug, report honestly.
+
+**A re-embed that silently does nothing is worse than one that fails.**
+
+### Final state
+
+Corpus audited across 15 provider prefixes on all three surfaces
+(SQLite, `notes/*.md`, Chroma): **0 findings**, 2,458 records intact.
+
+## Third incident, same day: the MCP surface was dead and nobody knew
+
+Six of the twenty-two configured MCP servers could not start. The
+symptom was not an error anyone was reading - it was **47,739 failed
+start attempts** for one server in `mcp-stderr.log`.
+
+| Server | Why it never started | Fix |
+|---|---|---|
+| `throne` (32 tools) | `command: python` resolved to an interpreter without `mcp.server.mcpserver` | point at the Hermes venv interpreter |
+| `bot-team` | pre-`MCPServer` API: `server.run(r, w, server.create_initialization_options())` | `server.run("stdio")` |
+| `youtubedl` | `${VAR:-default}` is not Hermes syntax, so the literal string reached the server as a path | real values in the config |
+| `ffmpeg` | same as `youtubedl` | real values in the config |
+| `thinking` | `mcp-server-sequential-thinking` is not on PyPI | `sequential-thinking-mcp` |
+| `globalping` | OAuth cannot complete non-interactively, so it warned on every tool load | disabled |
+
+A null server entry (`time:`) also crashed `hermes mcp list` with
+`TypeError: argument of type 'NoneType' is not a container`, so the list
+of every other server never printed.
+
+**"Enabled" is not "connected".** `hermes/scripts/mcp_doctor.py` now
+spawns each server the way Hermes does, performs the initialize
+handshake and lists the tools it really exposes. Current state: **18
+live, 197 tools, 3 disabled, 0 dead** (http servers are not stdio
+testable and are reported as such, never as dead).
+
+`hermes/scripts/mcp_call.py` calls any tool on any server from the CLI,
+which both proves the server works and gives immediate access to tools
+fixed mid-session - the desktop only rebuilds its catalog at session
+start.
+
+### A verifier that fails is not a verifier
+
+The first version of the doctor reported every server as dead, including
+`throne`, which starts perfectly. The bug was in the doctor:
+`init.serverInfo` does not exist in the Python SDK (it is
+`init.server_info`). The control - a server already known to work - was
+not run, so the harness bug looked like a system failure. **Always run a
+known-good control before believing a negative result.**

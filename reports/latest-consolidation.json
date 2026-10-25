@@ -1,16 +1,15 @@
 {
-  "ts": 1792813033.8244467,
+  "ts": 1792906097.3958569,
   "totals": {
-    "skills": 48,
-    "cron_jobs": 8,
-    "scripts": 36,
+    "skills": 46,
+    "cron_jobs": 10,
+    "scripts": 49,
     "mcp_servers": 15,
     "prior_attempts": 2,
     "profile_duplicates": 1,
     "verdicts": {
-      "KEEP": 88,
-      "REPAIR": 2,
-      "MERGE": 2,
+      "KEEP": 102,
+      "MERGE": 3,
       "DUPLICATE": 1
     }
   },
@@ -147,7 +146,7 @@
       "has_manifest": true,
       "is_category": false,
       "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\code-review-light\\SKILL.md",
-      "description": "Pre-commit review for secrets and syntax.",
+      "description": "Pre-commit review for secrets, syntax, and bulk payload.",
       "files": 1
     },
     {
@@ -200,9 +199,9 @@
       "kind": "skill",
       "has_manifest": true,
       "is_category": true,
-      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\evolutionary-loops\\ultron-evolutionary-loop\\SKILL.md",
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\evolutionary-loops\\hermes-continuous-learning\\SKILL.md",
       "description": "",
-      "files": 1
+      "files": 3
     },
     {
       "id": "github",
@@ -238,7 +237,7 @@
       "is_category": true,
       "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\infrastructure\\android-simplex-media-archiver\\SKILL.md",
       "description": "",
-      "files": 26
+      "files": 28
     },
     {
       "id": "mainframe-bootstrap",
@@ -340,15 +339,6 @@
       "files": 77
     },
     {
-      "id": "security",
-      "kind": "skill",
-      "has_manifest": false,
-      "is_category": false,
-      "manifest_path": "",
-      "description": "",
-      "files": 0
-    },
-    {
       "id": "smart-home",
       "kind": "skill",
       "has_manifest": true,
@@ -436,16 +426,7 @@
       "is_category": true,
       "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\web\\blocked-page-recovery\\SKILL.md",
       "description": "",
-      "files": 4
-    },
-    {
-      "id": "web-development",
-      "kind": "skill",
-      "has_manifest": false,
-      "is_category": false,
-      "manifest_path": "",
-      "description": "",
-      "files": 0
+      "files": 7
     }
   ],
   "cron_jobs": [
@@ -468,7 +449,7 @@
     {
       "id": "12162398f6f1",
       "kind": "cron",
-      "name": "System Health Watchdog (Thermal/Load)",
+      "name": "Service Health Watchdog (THRONE)",
       "enabled": true,
       "schedule": {
         "kind": "interval",
@@ -525,8 +506,8 @@
       },
       "model": null,
       "provider": null,
-      "failure_streak": 1,
-      "last_error": "Script exited with code 1\nstdout:\n[ERROR] No valid Tailscale API key found.",
+      "failure_streak": 0,
+      "last_error": "",
       "no_agent": true
     },
     {
@@ -573,8 +554,40 @@
       },
       "model": null,
       "provider": null,
-      "failure_streak": 2,
-      "last_error": "Script exited with code 1\nstdout:\n{\n  \"ts\": 1792812852.4073815,\n  \"ollama_http\": true,\n  \"ollama_models\": 36,\n  \"cpu\": 1",
+      "failure_streak": 0,
+      "last_error": "",
+      "no_agent": true
+    },
+    {
+      "id": "42236c93e5ff",
+      "kind": "cron",
+      "name": "Hermes_Learning_Review",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 3 * * *",
+        "display": "0 3 * * *"
+      },
+      "model": "starscream-64k",
+      "provider": "ollama-launch",
+      "failure_streak": 0,
+      "last_error": "",
+      "no_agent": false
+    },
+    {
+      "id": "8b0c1032e843",
+      "kind": "cron",
+      "name": "Host Load Watchdog",
+      "enabled": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
+      "model": null,
+      "provider": null,
+      "failure_streak": 0,
+      "last_error": "",
       "no_agent": true
     }
   ],
@@ -596,6 +609,14 @@
       "purpose": "health"
     },
     {
+      "id": "check_service_liveness.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\check_service_liveness.py",
+      "lines": 38,
+      "hash": "2eac019a89c81057",
+      "purpose": "health"
+    },
+    {
       "id": "debug_nexus_restart.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\debug_nexus_restart.py",
@@ -608,16 +629,16 @@
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\evolution_scout.py",
       "lines": 165,
-      "hash": "50c87a0a2aa5ff63",
+      "hash": "0de09f0493a4bcef",
       "purpose": "evolution"
     },
     {
-      "id": "final_patch_script.py",
+      "id": "evolution_stack_cycle.py",
       "kind": "script",
-      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\final_patch_script.py",
-      "lines": 53,
-      "hash": "d1e3098d772b5cac",
-      "purpose": "network"
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\evolution_stack_cycle.py",
+      "lines": 55,
+      "hash": "1d970b94fe6ffb73",
+      "purpose": "health"
     },
     {
       "id": "hh.py",
@@ -636,6 +657,22 @@
       "purpose": "health"
     },
     {
+      "id": "host_load_watchdog.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\host_load_watchdog.py",
+      "lines": 231,
+      "hash": "121c0bd7bb35fa08",
+      "purpose": "health"
+    },
+    {
+      "id": "learning_review.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\learning_review.py",
+      "lines": 77,
+      "hash": "e9e9c13837d0b677",
+      "purpose": "evolution"
+    },
+    {
       "id": "list-orders.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\list-orders.py",
@@ -650,6 +687,22 @@
       "lines": 93,
       "hash": "4d983cf467c99d7f",
       "purpose": "utility"
+    },
+    {
+      "id": "mcp_call.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\mcp_call.py",
+      "lines": 118,
+      "hash": "766cbf217805a3e7",
+      "purpose": "health"
+    },
+    {
+      "id": "mcp_doctor.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\mcp_doctor.py",
+      "lines": 146,
+      "hash": "847bf7314cc12165",
+      "purpose": "backup"
     },
     {
       "id": "mem_guard.py",
@@ -676,11 +729,27 @@
       "purpose": "memory"
     },
     {
+      "id": "n8n_launcher.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\n8n_launcher.py",
+      "lines": 79,
+      "hash": "3c7b75c9b3eff732",
+      "purpose": "evolution"
+    },
+    {
+      "id": "nexus_core_sync.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\nexus_core_sync.py",
+      "lines": 250,
+      "hash": "e61eaac2df42c173",
+      "purpose": "memory"
+    },
+    {
       "id": "ollama-health.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\ollama-health.py",
-      "lines": 64,
-      "hash": "47c9c623a8d27e21",
+      "lines": 155,
+      "hash": "5639661ac703e457",
       "purpose": "health"
     },
     {
@@ -700,11 +769,19 @@
       "purpose": "utility"
     },
     {
+      "id": "probe_http.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\probe_http.py",
+      "lines": 37,
+      "hash": "b51d046369655958",
+      "purpose": "health"
+    },
+    {
       "id": "restart_nexus.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\restart_nexus.py",
-      "lines": 93,
-      "hash": "7837f44c19473673",
+      "lines": 38,
+      "hash": "265f7023ba7774cb",
       "purpose": "health"
     },
     {
@@ -721,6 +798,38 @@
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\run_throne_health.py",
       "lines": 14,
       "hash": "f59be9fb804fc61a",
+      "purpose": "health"
+    },
+    {
+      "id": "safe_commit.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\safe_commit.py",
+      "lines": 203,
+      "hash": "7b49a4c0a1170c4c",
+      "purpose": "evolution"
+    },
+    {
+      "id": "secret_resolver.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\secret_resolver.py",
+      "lines": 134,
+      "hash": "7079083a42c910e0",
+      "purpose": "utility"
+    },
+    {
+      "id": "service_control.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\service_control.py",
+      "lines": 262,
+      "hash": "5098092b077f2fbb",
+      "purpose": "health"
+    },
+    {
+      "id": "service_gatekeeper.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\service_gatekeeper.py",
+      "lines": 58,
+      "hash": "9b17203d4c60abc4",
       "purpose": "health"
     },
     {
@@ -748,12 +857,12 @@
       "purpose": "health"
     },
     {
-      "id": "simple_merger.py",
+      "id": "spawn_detached.py",
       "kind": "script",
-      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\simple_merger.py",
-      "lines": 8,
-      "hash": "2d6ce4f4c810ba56",
-      "purpose": "backup"
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\spawn_detached.py",
+      "lines": 98,
+      "hash": "14c8b30f2b8fddd2",
+      "purpose": "utility"
     },
     {
       "id": "start_tesseract.py",
@@ -767,8 +876,8 @@
       "id": "tailnet_sync.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\tailnet_sync.py",
-      "lines": 134,
-      "hash": "b858f68e6c90809c",
+      "lines": 243,
+      "hash": "4f108afa08964a3d",
       "purpose": "network"
     },
     {
@@ -780,28 +889,12 @@
       "purpose": "utility"
     },
     {
-      "id": "tesseract_evo_logger.py",
-      "kind": "script",
-      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\tesseract_evo_logger.py",
-      "lines": 19,
-      "hash": "10b93de0752c00fd",
-      "purpose": "evolution"
-    },
-    {
       "id": "throne_discovery.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throne_discovery.py",
-      "lines": 827,
-      "hash": "93b6ea5f309c13e7",
+      "lines": 893,
+      "hash": "4406c3357ef5e00a",
       "purpose": "memory"
-    },
-    {
-      "id": "throne_evolution.py",
-      "kind": "script",
-      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throne_evolution.py",
-      "lines": 11,
-      "hash": "502a78327defc94a",
-      "purpose": "evolution"
     },
     {
       "id": "throne_health.py",
@@ -815,8 +908,8 @@
       "id": "throne_inventory_updater.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throne_inventory_updater.py",
-      "lines": 54,
-      "hash": "b0614cdffffb3dc7",
+      "lines": 68,
+      "hash": "d5e9ce20d8859f70",
       "purpose": "network"
     },
     {
@@ -836,11 +929,35 @@
       "purpose": "memory"
     },
     {
+      "id": "verify_tesseract_liveness.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\verify_tesseract_liveness.py",
+      "lines": 56,
+      "hash": "266915f366f6287f",
+      "purpose": "health"
+    },
+    {
+      "id": "wait_for_http.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\wait_for_http.py",
+      "lines": 62,
+      "hash": "f731f40519cdf37c",
+      "purpose": "health"
+    },
+    {
+      "id": "wait_for_services.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\wait_for_services.py",
+      "lines": 31,
+      "hash": "e46ac0afd9f7f1e1",
+      "purpose": "utility"
+    },
+    {
       "id": "watchdog.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\watchdog.py",
-      "lines": 297,
-      "hash": "666512156d512449",
+      "lines": 304,
+      "hash": "5f53351b496e3a13",
       "purpose": "health"
     },
     {
@@ -987,21 +1104,46 @@
           "files": [
             "_health_probe.py",
             "_run_wd.py",
+            "check_service_liveness.py",
+            "evolution_stack_cycle.py",
             "hh.py",
             "hh2.py",
+            "host_load_watchdog.py",
+            "mcp_call.py",
             "ollama-health.py",
             "ollama-server.py",
+            "probe_http.py",
             "restart_nexus.py",
             "run_throne_health.py",
+            "service_control.py",
+            "service_gatekeeper.py",
             "shop_server.py",
             "start_tesseract.py",
             "throne_health.py",
             "throne_watchdog.py",
+            "verify_tesseract_liveness.py",
+            "wait_for_http.py",
             "watchdog.py",
             "workspace-watchdog.py",
             "world_scraper.py"
           ],
-          "count": 15
+          "count": 24
+        },
+        {
+          "purpose": "utility",
+          "files": [
+            "list-orders.py",
+            "manual_outreach.py",
+            "order-digest.py",
+            "secret_resolver.py",
+            "shop-launcher.py",
+            "shop_bot.py",
+            "spawn_detached.py",
+            "telegram_alert.py",
+            "wait_for_services.py",
+            "wrap-formatprice.py"
+          ],
+          "count": 10
         },
         {
           "purpose": "memory",
@@ -1010,42 +1152,30 @@
             "mem_guard.py",
             "memory-promoter.py",
             "memory_safety_check.py",
+            "nexus_core_sync.py",
             "robust_nexus_sync.py",
             "throne_discovery.py",
             "throttle-audit.py"
           ],
-          "count": 7
-        },
-        {
-          "purpose": "utility",
-          "files": [
-            "list-orders.py",
-            "manual_outreach.py",
-            "order-digest.py",
-            "shop-launcher.py",
-            "shop_bot.py",
-            "telegram_alert.py",
-            "wrap-formatprice.py"
-          ],
-          "count": 7
+          "count": 8
         },
         {
           "purpose": "evolution",
           "files": [
             "evolution_scout.py",
-            "tesseract_evo_logger.py",
-            "throne_evolution.py"
+            "learning_review.py",
+            "n8n_launcher.py",
+            "safe_commit.py"
           ],
-          "count": 3
+          "count": 4
         },
         {
           "purpose": "network",
           "files": [
-            "final_patch_script.py",
             "tailnet_sync.py",
             "throne_inventory_updater.py"
           ],
-          "count": 3
+          "count": 2
         }
       ]
     }
@@ -1241,11 +1371,6 @@
       "reason": "category container"
     },
     {
-      "id": "security",
-      "verdict": "REPAIR",
-      "reason": "no SKILL.md \u2014 cannot be loaded"
-    },
-    {
       "id": "smart-home",
       "verdict": "KEEP",
       "reason": "category container"
@@ -1296,11 +1421,6 @@
       "reason": "category container"
     },
     {
-      "id": "web-development",
-      "verdict": "REPAIR",
-      "reason": "no SKILL.md \u2014 cannot be loaded"
-    },
-    {
       "id": "b7da3fe7e86e",
       "verdict": "KEEP",
       "reason": ""
@@ -1341,12 +1461,27 @@
       "reason": ""
     },
     {
+      "id": "42236c93e5ff",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "8b0c1032e843",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
       "id": "_health_probe.py",
       "verdict": "KEEP",
       "reason": ""
     },
     {
       "id": "_run_wd.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "check_service_liveness.py",
       "verdict": "KEEP",
       "reason": ""
     },
@@ -1361,7 +1496,7 @@
       "reason": ""
     },
     {
-      "id": "final_patch_script.py",
+      "id": "evolution_stack_cycle.py",
       "verdict": "KEEP",
       "reason": ""
     },
@@ -1376,12 +1511,32 @@
       "reason": ""
     },
     {
+      "id": "host_load_watchdog.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "learning_review.py",
+      "verdict": "MERGE",
+      "reason": "overlaps the evolution stack \u2014 fold into evo/"
+    },
+    {
       "id": "list-orders.py",
       "verdict": "KEEP",
       "reason": ""
     },
     {
       "id": "manual_outreach.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "mcp_call.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "mcp_doctor.py",
       "verdict": "KEEP",
       "reason": ""
     },
@@ -1401,6 +1556,16 @@
       "reason": ""
     },
     {
+      "id": "n8n_launcher.py",
+      "verdict": "MERGE",
+      "reason": "overlaps the evolution stack \u2014 fold into evo/"
+    },
+    {
+      "id": "nexus_core_sync.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
       "id": "ollama-health.py",
       "verdict": "KEEP",
       "reason": ""
@@ -1412,6 +1577,11 @@
     },
     {
       "id": "order-digest.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "probe_http.py",
       "verdict": "KEEP",
       "reason": ""
     },
@@ -1431,6 +1601,26 @@
       "reason": ""
     },
     {
+      "id": "safe_commit.py",
+      "verdict": "MERGE",
+      "reason": "overlaps the evolution stack \u2014 fold into evo/"
+    },
+    {
+      "id": "secret_resolver.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "service_control.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "service_gatekeeper.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
       "id": "shop-launcher.py",
       "verdict": "KEEP",
       "reason": ""
@@ -1446,7 +1636,7 @@
       "reason": ""
     },
     {
-      "id": "simple_merger.py",
+      "id": "spawn_detached.py",
       "verdict": "KEEP",
       "reason": ""
     },
@@ -1466,19 +1656,9 @@
       "reason": ""
     },
     {
-      "id": "tesseract_evo_logger.py",
-      "verdict": "MERGE",
-      "reason": "overlaps the evolution stack \u2014 fold into evo/"
-    },
-    {
       "id": "throne_discovery.py",
       "verdict": "KEEP",
       "reason": ""
-    },
-    {
-      "id": "throne_evolution.py",
-      "verdict": "MERGE",
-      "reason": "overlaps the evolution stack \u2014 fold into evo/"
     },
     {
       "id": "throne_health.py",
@@ -1497,6 +1677,21 @@
     },
     {
       "id": "throttle-audit.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "verify_tesseract_liveness.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "wait_for_http.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "wait_for_services.py",
       "verdict": "KEEP",
       "reason": ""
     },
