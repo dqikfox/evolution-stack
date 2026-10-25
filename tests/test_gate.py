@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from evo import archive, bench, loop, mutate, paths, snapshot  # noqa: E402
+from evo import mirror
 
 PROBE = "scripts/_evo_gate_probe.py"
 GOOD = '"""Gate probe (valid)."""\nprint("probe ok")\n'
@@ -59,6 +60,15 @@ def main() -> int:
 
     # 4. cleanup -----------------------------------------------------------
     (paths.HERMES / PROBE).unlink(missing_ok=True)
+    # The accepted phase MIRRORS the probe into the surface mirror, which is
+    # a public repository's working tree. Leaving it there means a test
+    # artefact sits in a repo until the next mirror run prunes it - and in
+    # that window a commit could sweep it into the published surface. The
+    # test owns its artefacts in BOTH surfaces.
+    mirrored = mirror.MIRROR / PROBE
+    if mirrored.exists():
+        mirrored.unlink()
+        print("[4a] removed the mirrored probe from the published surface")
     final = _score()
     print(f"[4] final score after cleanup: {final:.2f}")
 
