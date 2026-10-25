@@ -440,6 +440,23 @@ Rules that follow: a permanent artifact is named like one; a gate input belongs 
 
 Full rules, the evidence and the `dry_run()` recipe in `references/disk-cleanup-hazard.md`.
 
+## A background test result can describe a tree that no longer exists
+
+A notification that says "325 passed, 1 skipped, 1 warning" may be a report from a tree that was replaced hours ago. It has happened three times in one session, and each time the reported warning named a defect that was already fixed.
+
+Do not act on the number. Judge it:
+
+```bash
+python %LOCALAPPDATA%/hermes/scripts/verify_test_run.py --log <log> --repo <repo>
+```
+
+It compares the count in the log against the count the tree collects right now, and the log's write time against the repo's last commit. It prints CURRENT or STALE and exits 1 on stale, so a script can gate on it. A stale verdict means: re-run the suite against the current tree.
+
+Two traps it encodes:
+
+- pytest lists failures BEFORE passes ("12 failed, 300 passed"), so a parser that matches the passing order returns nothing on exactly the runs you most need to read.
+- A heartbeat can be the last flush of a process that has already been replaced. Check the port owner and the process tree, not the output - and read the sockets a PID holds, not a truncated command line, before you call it an orphan.
+
 ## Quick recovery checklist
 1. `hermes gateway start`
 2. Retarget any cron still on nous/z-ai to ollama-launch
