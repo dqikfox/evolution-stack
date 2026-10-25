@@ -12,12 +12,14 @@ from __future__ import annotations
 import json
 import os
 import py_compile
+import re
 import shutil
 import socket
 import subprocess
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -274,6 +276,26 @@ def check_repos() -> list[Check]:
     return out
 
 
+def _parse_ts(raw) -> "datetime | None":
+    """Parse an ISO timestamp as an aware UTC datetime.
+
+    The scout writes UTC with an offset. Parsing the naive part with
+    time.mktime() reads that as LOCAL time, so on a UTC+11 host a
+    report written ten minutes ago is reported as eleven hours old. A
+    gate that misreports the age of its own input is worse than no
+    gate: it hides a fresh report and it invents a stale one.
+    """
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def check_scout() -> list[Check]:
     out: list[Check] = []
     t0 = time.time()
@@ -281,20 +303,47 @@ def check_scout() -> list[Check]:
                      "present" if paths.SCOUT.exists() else "missing", time.time() - t0))
     t0 = time.time()
     rp = paths.SCOUT_REPORT
+    ts = None
+    findings = None
+    source = None
     if rp.exists():
         try:
             d = json.loads(rp.read_text(encoding="utf-8"))
-            ts = d.get("ts")
-            age = time.time() - (time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S"))
-                                 if ts else 0)
+            ts = _parse_ts(d.get("ts"))
+            findings = d.get("finding_count")
+            source = "report"
+        except Exception:
+            pass
+    if ts is None and paths.SCOUT_LOG.exists():
+        # The report file lives in a directory another system owns, and a
+        # missing file is NOT evidence that the scout did not run - the
+        # append-only log carries the same timestamp. Reading it keeps
+        # the gate honest about what actually happened.
+        try:
+            lines = [l for l in paths.SCOUT_LOG.read_text(encoding="utf-8").splitlines()
+                     if l.strip()]
+            if lines:
+                m = re.search(r"\[([^\]]+)\]\s+findings=(\d+)", lines[-1])
+                if m:
+                    ts = _parse_ts(m.group(1))
+                    findings = int(m.group(2))
+                    source = "log"
+        except Exception:
+            pass
+    if ts is None:
+        out.append(Check("scout:fresh", "evolution", 3.0, False,
+                         "no report and no log entry", time.time() - t0))
+    else:
+        age = (datetime.now(timezone.utc) - ts).total_seconds()
+        if age < -300:
+            out.append(Check("scout:fresh", "evolution", 3.0, False,
+                             f"report timestamp is {int(-age/60)}m in the future (from {source})",
+                             time.time() - t0))
+        else:
             fresh = age < 86400 * 3
             out.append(Check("scout:fresh", "evolution", 3.0, fresh,
-                             f"{int(age/3600)}h old, {d.get('finding_count')} findings",
+                             f"{int(age/3600)}h old, {findings} findings (from {source})",
                              time.time() - t0))
-        except Exception as e:
-            out.append(Check("scout:fresh", "evolution", 3.0, False, str(e)[:80], time.time() - t0))
-    else:
-        out.append(Check("scout:fresh", "evolution", 3.0, False, "no report", time.time() - t0))
     return out
 
 

@@ -40,6 +40,7 @@ LEGACY_EVOLVE = Path(r"C:\Users\KING\Projects\evolution")
 SCOUT = HERMES / "scripts" / "evolution_scout.py"
 WATCHDOG = HERMES / "scripts" / "watchdog.py"
 SCOUT_REPORT = HERMES / "cron" / "output" / "evolution_scout.json"
+SCOUT_LOG = HERMES / "cron" / "output" / "evolution_scout.log"
 HEALTH_STATE = HERMES / "cron" / "output" / "health_state.json"
 
 # --- services ---------------------------------------------------------------
