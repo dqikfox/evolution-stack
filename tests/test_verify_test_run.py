@@ -147,3 +147,53 @@ def test_warnings_are_surfaced_when_the_result_is_current(monkeypatch, tmp_path,
     assert code == 0
     assert "warning" in capsys.readouterr().out
 
+
+# ------------------------------------------------------------- time zones
+# The thirteen tests above injected NAIVE datetimes on both sides, so the
+# comparison worked in the test and CRASHED in production: git returns an
+# aware commit time (%cI carries the offset) while a file mtime is naive.
+# `naive < aware` raises TypeError, so the verifier produced a stack trace
+# instead of a verdict - and a caller holding a stack trace is a caller
+# who ends up trusting the run anyway.
+
+def test_a_naive_log_time_against_an_aware_commit_time_does_not_crash(monkeypatch, tmp_path):
+    """The real production combination must return a verdict, not raise."""
+    import datetime
+    aware = datetime.datetime(2026, 10, 25, 19, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=10)))
+    code = _run(monkeypatch, tmp_path, "337 passed in 10.0s", collected=337,
+                commit_time=aware,
+                log_time=datetime.datetime(2026, 10, 25, 18, 0))
+    assert code in (0, 1), "the verifier must judge, not crash"
+
+
+def test_a_naive_log_before_an_aware_commit_is_stale(monkeypatch, tmp_path):
+    import datetime
+    aware = datetime.datetime(2026, 10, 25, 19, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=10)))
+    code = _run(monkeypatch, tmp_path, "337 passed in 10.0s", collected=337,
+                commit_time=aware,
+                log_time=datetime.datetime(2026, 10, 25, 18, 0))
+    assert code == 1, "the tree moved after the log was written"
+
+
+def test_mtime_is_timezone_aware(tmp_path):
+    """A file mtime must be aware, because git's commit time is."""
+    log = tmp_path / "run.log"
+    log.write_text("337 passed in 10.0s", encoding="utf-8")
+    got = vtr.mtime(log)
+    assert got is not None
+    assert got.tzinfo is not None, "a naive mtime cannot be compared with git's aware time"
+
+
+def test_as_aware_normalizes_a_naive_datetime():
+    import datetime
+    naive = datetime.datetime(2026, 10, 25, 18, 0)
+    assert vtr._as_aware(naive).tzinfo is not None
+    assert vtr._as_aware(None) is None
+
+
+def test_two_datetimes_of_mixed_awareness_can_be_compared():
+    import datetime
+    naive = datetime.datetime(2026, 10, 25, 18, 0)
+    aware = datetime.datetime(2026, 10, 25, 19, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=10)))
+    assert vtr._as_aware(naive) < vtr._as_aware(aware)
+

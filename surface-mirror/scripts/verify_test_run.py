@@ -111,9 +111,33 @@ def last_commit_time(repo: Path) -> datetime.datetime | None:
         return None
 
 
+def _as_aware(dt: datetime.datetime | None) -> datetime.datetime | None:
+    """Make a datetime comparable, whatever it arrived as.
+
+    A naive datetime is interpreted as LOCAL time, which is what
+    `fromtimestamp` produces on this host. The rule is the same one the
+    estate gate follows: a UTC timestamp must never be read as local, and
+    two datetimes must never be compared until both are the same kind of
+    thing.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.astimezone()
+    return dt
+
+
 def mtime(path: Path) -> datetime.datetime | None:
+    """The file's modification time, TIMEZONE-AWARE.
+
+    The commit time comes from git as an aware datetime (%cI carries the
+    offset), so a naive mtime cannot be compared with it: `naive < aware`
+    raises TypeError. A verifier that crashes instead of judging is worse
+    than no verifier, because the caller sees a stack trace and no
+    verdict - and the temptation is to trust the run anyway.
+    """
     try:
-        return datetime.datetime.fromtimestamp(path.stat().st_mtime)
+        return datetime.datetime.fromtimestamp(path.stat().st_mtime).astimezone()
     except OSError:
         return None
 
@@ -183,7 +207,7 @@ def main() -> int:
     reasons = []
     if live is not None and live != ran:
         reasons.append(f"the log reports {ran} tests, the live tree collects {live}")
-    if log_time and commit_time and log_time < commit_time:
+    if log_time and commit_time and _as_aware(log_time) < _as_aware(commit_time):
         reasons.append(
             f"the log was written {log_time:%Y-%m-%d %H:%M}, before the last commit "
             f"({commit_time:%Y-%m-%d %H:%M})")
