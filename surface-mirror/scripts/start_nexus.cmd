@@ -30,12 +30,24 @@ set NEXUS_SUP_LOG=%LOCALAPPDATA%\hermes\logs\nexus_supervisor_stdout.log
 set SPAWNER=%LOCALAPPDATA%\hermes\scripts\spawn_detached.py
 set PROBE=%LOCALAPPDATA%\hermes\scripts\probe_http.py
 set WAITER=%LOCALAPPDATA%\hermes\scripts\wait_for_http.py
+set RECLAIMER=%LOCALAPPDATA%\hermes\scripts\service_control.py
 set NEXUS_HEALTH=http://127.0.0.1:%NEXUS_PORT%/health
 
 echo [nexus] checking port %NEXUS_PORT%...
+REM An ORPHAN - a killed supervisor's surviving child - answers the
+REM port with no supervisor above it. It is unsupervised, it may be
+REM running stale code, and nothing restarts it if it dies. The
+REM launcher used to accept that as "already up" and never start a
+REM supervisor, so the service only came back when someone cleared
+REM the orphan by hand. Reclaim it first, then decide.
+"%NEXUS_VENV%" "%RECLAIMER%" reclaim --port %NEXUS_PORT% --marker "run_nexus.py"
+if errorlevel 1 (
+    echo [nexus] FAILED: could not reclaim :%NEXUS_PORT%
+    exit /b 1
+)
 "%NEXUS_VENV%" "%PROBE%" "%NEXUS_HEALTH%" 3
 if not errorlevel 1 (
-    echo [nexus] already up on :%NEXUS_PORT% - nothing to do.
+    echo [nexus] already up on :%NEXUS_PORT% - supervised, nothing to do.
     exit /b 0
 )
 
@@ -53,6 +65,10 @@ if not exist "%SPAWNER%" (
 )
 if not exist "%WAITER%" (
     echo [nexus] FAILED: waiter missing at %WAITER%
+    exit /b 1
+)
+if not exist "%RECLAIMER%" (
+    echo [nexus] FAILED: reclaimer missing at %RECLAIMER%
     exit /b 1
 )
 if not exist "%PROBE%" (

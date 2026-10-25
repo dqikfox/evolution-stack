@@ -25,6 +25,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -90,6 +91,15 @@ def supervisor_pids(marker):
             continue
         if "hermes-agent" in low or "hermes\\agent" in low:
             continue                      # a Hermes task, not the service
+        name = (p.get("Name") or "").lower()
+        if not name.startswith("python"):
+            continue                      # a wrapper (powershell/cmd) that
+                                         # merely has the marker as an ARGUMENT
+        if "service_control.py" in low:
+            continue                      # THIS tool's own invocation - the
+                                         # marker is its last argument
+        if p.get("ProcessId") == os.getpid():
+            continue
         if not cmd.strip().rstrip('"').lower().endswith(marker.lower()):
             continue                      # a wrapper that merely mentions it
         out.append(p)
@@ -183,13 +193,56 @@ def report(port, marker):
     return False
 
 
+def reclaim(port, marker):
+    """Clear an ORPHAN holding the port, so a supervisor can be started.
+
+    "The port answers" is not "the service is healthy". A supervisor that
+    was killed leaves its child running and holding the port; a launcher
+    that only probes the port then says "already up" and never starts a
+    supervisor, so the service keeps serving unsupervised - and stale
+    code - until that orphan dies for good.
+
+    So: if the port answers but no live supervisor owns it, the orphan is
+    terminated and the port is freed. An unrelated process on the port is
+    never touched.
+    """
+    lp = listener_pid(port)
+    if not lp:
+        print(f"  :{port} is free - nothing to reclaim")
+        return True
+    chain = chain_of(lp)
+    chain_pids = {p["ProcessId"] for p in chain}
+    roots = [p for p in supervisor_pids(marker) if p["ParentProcessId"] not in
+             {s["ProcessId"] for s in supervisor_pids(marker)}]
+    if any(p["ProcessId"] in chain_pids for p in roots):
+        print(f"  :{port} is owned by a live supervisor "
+              f"({[p['ProcessId'] for p in roots]}) - nothing to reclaim")
+        return True
+    print(f"  :{port} is held by an ORPHAN (no supervisor above it): "
+          f"{[p['ProcessId'] for p in chain]}")
+    for p in chain:
+        subprocess.run(["taskkill", "/PID", str(p["ProcessId"]), "/F", "/T"],
+                       capture_output=True, text=True)
+    for _ in range(20):
+        if not listener_pid(port):
+            print(f"  :{port} reclaimed")
+            return True
+        time.sleep(0.5)
+    print(f"  :{port} would not release")
+    return False
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["stop", "start", "restart", "report"])
+    ap.add_argument("action", choices=["stop", "start", "restart", "report", "reclaim"])
     ap.add_argument("--marker", default="run_nexus.py")
     ap.add_argument("--launcher")
     ap.add_argument("--port", type=int, default=8650)
     a = ap.parse_args()
+    if a.action == "reclaim":
+        print(f"=== reclaiming :{a.port} (marker={a.marker!r}) ===")
+        ok = reclaim(a.port, a.marker)
+        return 0 if ok else 1
     if a.action in ("stop", "restart"):
         print(f"=== stopping (marker={a.marker!r}) ===")
         stop(a.marker, a.port)
