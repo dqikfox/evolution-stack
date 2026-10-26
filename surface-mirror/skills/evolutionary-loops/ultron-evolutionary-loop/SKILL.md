@@ -128,7 +128,11 @@ defects found and the fixes, is in
   plaintext never touches disk or a command line.
 - **Orphaned search processes are a real load** — a stray `find`/`grep` burned
   6,681 CPU-seconds and pegged the host at 100% CPU. Check for leftovers from
-  timed-out searches before blaming the workload.
+  timed-out searches before blaming the workload. BOUND every search: an unbounded
+  recursive walk over a large tree (a knowledge corpus, a venv, a repo with
+  `node_modules`) can pin the tool call until it is killed and lose the work it
+  was carrying. Search a named root, cap the result count, and use the search
+  tool's own path and glob filters instead of hand-rolled recursion.
 - **Mirroring the surface needs size discipline** — mirroring dot-directories
   (`.curator_backups`, `.hub`) pulled 254 MB of tarballs into the repo. Skip
   dot-paths and files over 512 KB.
@@ -311,9 +315,43 @@ defects found and the fixes, is in
   `.env` had a stale `NEXUS_DB_PATH` pointing at an empty `core/nexus.db`.
   Use a NEW name for a new knob, and never make a live path depend on an
   inherited environment variable without checking what is already set.
+- **A namespace package loses to a regular package of the same name anywhere on
+  `sys.path`** — the stack's `tools/` was a namespace directory, so
+  `from tools.history_secret_sweep import sweep` resolved to the Hermes agent's own
+  `tools` package and failed naming the SUBMODULE, which is the tell: `tools`
+  imported fine, it was simply the wrong `tools`. Give the directory an
+  `__init__.py` so it is a regular package found first on the path.
+- **One canonical lesson ledger, and a one-way snapshot of it** — the live ledger is
+  `hermes/memories/LESSONS.md`; NEXUS keeps a private snapshot refreshed by
+  `scripts/sync_lessons.py`. A second writable ledger is a second source of truth
+  that drifts; take the pattern of a new tool (dedupe, reversibility, check before
+  the log line) without the substrate.
+- **Operational state read by another system lives under its writer's directory** —
+  the estate publishes peer state under the evolution stack's own `state/`, not under
+  a consumer's directory, and writes it atomically so a reader never sees a
+  half-written file. Carry the generation time with it: a reader that shows stale
+  state as current is worse than one that shows nothing.
+- **Stage explicit paths, never the whole tree** — `git add -A` in the evolution
+  stack can stage the publication mirror's deletions and a scratch file in one
+  commit. List every path, including the paths a mirror pruned.
+- **The surface mirror publishes the house surface and prunes what the house
+  archived** — a skill that moved to `.archive/` in the house is removed from the
+  mirror, which is correct: the mirror is a publication surface, not a backup.
+- **A peer that is unreachable is not a failed service** — score it false on the
+  gate and report it, so the gate does not fail for a machine that is switched off.
+  The states, the transports and the estate implementation are in the
+  `throne-sysadmin-network` skill under "Service and Peer Contracts".
 - **Report the delta, not the vibe** — "gate 84.62 → 76.92, rejected, rolled back"
   beats "made it better".
 - **Network awareness** — never ignore the relationship between this host (THRONE) and
   its satellites (MSI, S23, Cyclone-C4). We evolve as a network, not in isolation.
 - **Stagnation** — do not re-run a completed task without adding verification or
   complexity; do not park a green-health result and stop.
+- **A finished milestone is not a stopping point** — under a standing "keep
+  building" instruction, the end of one coherent batch is the moment to pick the
+  next obvious high-leverage gap and ship it, not the moment to hand back a status
+  summary and wait. Choose the next target yourself, decide, execute, and report
+  what the work DID rather than a plan for it: an operator who has to ask "what
+  next?" every cycle is doing the agent's job. Spend a question only on a decision
+  that is genuinely the operator's — a spend, a deletion, a credential, a
+  third-party account — and batch everything else into the turn and ship it.

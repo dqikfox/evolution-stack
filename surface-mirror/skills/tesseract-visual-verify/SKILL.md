@@ -42,10 +42,29 @@ The reference script at `scripts/verify_clean.py` captures:
   press Backspace N times to clear, don't use `inp.value = ''` (loses focus).
 - **Group label discovery**: `Array.from(document.querySelectorAll('#search-dropdown .search-group-label')).map(el => el.textContent)`
   prints exactly which groups rendered.
+- **Two functions can fetch the same endpoint — patch the one the tab actually calls.**
+  A panel that stays empty while its API returns data is usually the wrong render
+  function, not a broken response. Diagnose in the browser: confirm the container
+  exists, confirm the fetch returns the payload, then confirm which function the
+  tab invokes (`page.on("pageerror")` plus a read of the container's `innerHTML`).
+- **`inner_text()` returns an empty string for a hidden element.** When diagnosing a
+  panel that "does not render", read `inner_html()` instead — it is not subject to
+  visibility.
+- **Element screenshots need the element scrolled into view**:
+  `element.scroll_into_view_if_needed()` then `element.screenshot(path=...)`. A
+  full-page screenshot of a long dashboard puts the panel below the fold and the
+  verification image proves nothing.
+- **Run the script with the interpreter that has Playwright** — the Hermes venv
+  (`%LOCALAPPDATA%\hermes\hermes-agent\venv\Scripts\python.exe`), not the project's
+  venv, which does not carry it.
+- **Restart the service through the canonical launcher after changing server code.**
+  The launcher deliberately leaves a healthy supervised service alone, so an edited
+  server keeps serving the old code until it is stopped and relaunched through
+  `hermes/scripts/start_tesseract.cmd`.
 
 ## Test bar
 
-Spec says ≥197 tests passing; current baseline is 215 passed + 1 skipped.
+Spec says ≥197 tests passing; current baseline is 339 passed + 1 skipped.
 
 ```bash
 .venv/Scripts/python.exe -m pytest -q

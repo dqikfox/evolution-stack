@@ -314,6 +314,60 @@ msfconsole.bat -q -x "use auxiliary/scanner/discovery/arp_sweep; set RHOSTS 192.
 msfconsole.bat -q -x "use auxiliary/scanner/smb/smb_version; set RHOSTS 192.168.4.230; run; exit"
 ```
 
+## Service and Peer Contracts
+
+The house registers every service in `E:\ultron-memory\infra\SERVICES.json` and every
+remote peer in `E:\ultron-memory\infra\REMOTE_AGENTS.json`. These rules are what make
+those two files true rather than decorative.
+
+**Local services**
+- **The start path and its arguments are separate fields.** A registry entry whose
+  path is stored as `"script.bat --http"` cannot be checked for existence —
+  `Path("script.bat --http").exists()` is False — so the service reads as having no
+  start path and the watchdog refuses to heal it. Store `path` and `args` separately.
+- **A launcher for a long-running service must spawn it detached and return.** A
+  launcher that runs the service in the foreground never exits, so the caller waits
+  for the whole heal budget on a process that was working the entire time. Spawn
+  through `hermes/scripts/spawn_detached.py`, then wait for the endpoint.
+- **A health endpoint must not block on heavyweight work.** Serve first, do the
+  expensive scan in a background thread. A LAN scan that runs before the bind keeps
+  the port closed for the whole scan, so the service looks unstartable while it is
+  working.
+- **Bind a service to `127.0.0.1` unless it is meant to be reachable.** The empty
+  string binds every interface and publishes the machine's inventory to the tailnet.
+- **Define a handler class before the server that uses it.** A class is a local of
+  its function: referencing it before the `class` statement raises
+  `UnboundLocalError` on the first line of work, and the process stays alive with
+  the port closed — it reads as "present but not serving" forever.
+
+**Remote peers**
+- **Ask the peer about itself.** A peer's services are bound to its own loopback, so
+  a probe from here sees a closed port for a perfectly healthy service. Probe over
+  ssh, against the peer's own health endpoint.
+- **Three states, not two: `up`, `down`, `unreachable`.** An unreachable peer cannot
+  be healed by anyone. It is reported, it lands on the host score rather than the
+  gate, and it is never "healed" — a heal that cannot possibly work is a slow way
+  to fail. A gate that fails for a machine that is switched off is a gate that cries
+  wolf.
+- **Heal a peer through the peer's own start path** (its scheduled task), never a
+  command invented here. The far side knows how to start its own service.
+- **A peer that is stopped and knows how to be woken is not a failure** — it is a
+  node that is not being paid for right now. The wake command runs here, because
+  the provider's control plane is what starts it.
+- **Keep peers out of the service census.** A peer that is off must never raise a
+  service alert; peers belong in the network panel, and the estate publishes their
+  state (with its own age) for the dashboard to read.
+
+**Running a long-lived child from a tool call**
+- **Redirect the child's output to files, not a pipe.** A detached service that
+  inherits the caller's stdout pipe holds it open, so `subprocess.run(...,
+  capture_output=True)` blocks forever on a call that already finished its work.
+- **Bound every search.** An unbounded recursive walk over a large tree pins CPU and
+  can wedge the tool kernel; search a named root and cap the result count.
+
+See `references/peer-and-service-contracts.md` for the peer model's states,
+transports, and the estate-side implementation.
+
 ## Rules of Engagement
 
 1. **Always check inventory first** — `throne_inventory` before launching scans.
