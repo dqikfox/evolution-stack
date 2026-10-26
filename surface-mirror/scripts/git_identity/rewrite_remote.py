@@ -223,6 +223,21 @@ def main(name, url, workdir=None):
     # its SHA is unchanged, so the push would be a no-op at best, and the
     # faraday experience showed what happens when a rewrite does change it
     # anyway - the whole repository gets uploaded for no reason.
+    # The lease is taken from the ORIGINAL remote state, so a branch that
+    # moved under us is refused rather than overwritten.
+    #
+    # This has to be read BEFORE the clean-branch check below: the check
+    # compares the rewritten SHA against the remote's SHA to decide whether
+    # a branch was left alone, so it needs the remote state. Reading it
+    # after that check made the comparison raise UnboundLocalError and the
+    # publish died AFTER a successful rewrite - faraday's 85 commits were
+    # rewritten and re-created correctly and then thrown away.
+    remotes = {}
+    for line in git(str(work), "ls-remote", "--heads", "origin").stdout.splitlines():
+        sha, _, ref = line.partition("\t")
+        remotes[ref.replace("refs/heads/", "")] = sha
+    print("   %d remote branches to publish" % len(remotes), flush=True)
+
     clean_branches = []
     for line in git(str(work), "for-each-ref",
                     "--format=%(refname) %(objectname)", "refs/heads/").stdout.splitlines():
