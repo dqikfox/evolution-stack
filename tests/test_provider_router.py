@@ -79,6 +79,15 @@ class _Handler(BaseHTTPRequestHandler):
             payload = {"error": {"code": "model_not_found",
                                  "message": "The model is not supported"}}
             status = 404
+        elif mode == "atcapacity":
+            # The exact sentence a real provider sends when it is busy. It
+            # used to be read as a MISSING MODEL, because the classifier
+            # matched the bare word "model" in it.
+            payload = {"error": {"code": "server_at_capacity",
+                                 "message": "The model is currently at capacity due to "
+                                            "high demand. Please try again in a few "
+                                            "minutes, or use a higher service tier"}}
+            status = 503
         else:
             payload = {"error": {"message": "boom"}}
             status = 500
@@ -181,6 +190,32 @@ def test_a_missing_model_is_nomodel(server):
     p = mk("t", "http://127.0.0.1:%d" % server.server_port)
     r = pr.probe(p)
     assert r["status"] == "nomodel"
+
+
+def test_a_provider_at_capacity_is_blocked_not_a_missing_model(server):
+    """A busy provider is a CURRENT CONDITION, not a missing model.
+
+    "The model is currently at capacity due to high demand" contains the
+    word "model", and the classifier used to match that bare word - so a
+    provider that was merely busy read as a provider whose model was gone.
+    The rotation then went looking for a model that was there all along,
+    and the routing proof failed an integration that was working.
+    """
+    server.mode = "atcapacity"
+    p = mk("t", "http://127.0.0.1:%d" % server.server_port)
+    r = pr.probe(p)
+    assert r["status"] == "blocked", "a capacity refusal was read as %r" % r["status"]
+    assert "capacity" in (r["error"] or "").lower()
+
+
+def test_the_word_model_alone_is_not_a_missing_model():
+    """Any sentence about a model contains the word. Only the specific
+    phrasings that mean the model is NOT there count."""
+    assert pr.classify("the model is at capacity due to high demand") == "blocked"
+    assert pr.classify("the model did not produce any output") == "failed"
+    assert pr.classify("model_not_found") == "nomodel"
+    assert pr.classify("The model is not supported") == "nomodel"
+    assert pr.classify("unknown model") == "nomodel"
 
 
 def test_an_unreachable_provider_fails_without_raising(server):

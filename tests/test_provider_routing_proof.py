@@ -71,7 +71,15 @@ QUOTA_MARKS = ("usage limit", "upgrade to", "quota", "credit", "exhausted",
                # That is a plan cap, not a broken integration, and the proof
                # must skip on it - but ONLY on it. A wrong answer or a dead
                # transport still fails.
-               "429", "too many requests")
+               "429", "too many requests",
+               # A provider at CAPACITY is the same kind of condition: the
+               # credential is real, the provider will not serve right now,
+               # and it clears on its own. "The model is currently at
+               # capacity due to high demand" is the exact sentence that
+               # failed this proof once, because nothing recognised it and
+               # the provider's refusal was read as a broken call.
+               "at capacity", "high demand", "overloaded",
+               "try again in a few minutes", "higher service tier")
 
 
 def _quota_capped(d: dict) -> str:

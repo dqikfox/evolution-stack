@@ -580,9 +580,30 @@ def classify(err: str) -> str:
     # It is BLOCKED, exactly like a usage cap.
     if "429" in s or "too many requests" in s:
         return "blocked"
+    # CAPACITY is a CURRENT CONDITION on a valid credential.
+    #
+    # "The model is currently at capacity due to high demand. Please try
+    # again in a few minutes" is the provider saying it will not serve right
+    # now. It is not a missing model and it is not a broken credential. It
+    # used to be classified 'nomodel', because the catch-all further down
+    # matched the bare word "model" in the sentence - so a busy provider
+    # read as a missing model, the rotation went looking for a model that
+    # was there all along, and the routing proof failed an integration that
+    # was working.
+    #
+    # It is BLOCKED, exactly like a plan cap: the credential is real and the
+    # condition clears on its own.
+    if any(k in s for k in ("at capacity", "high demand", "overloaded",
+                            "capacity", "try again in a few minutes",
+                            "higher service tier", "server is busy")):
+        return "blocked"
     if any(k in s for k in ("api key", "unauthorized", "authentication", "401", "invalid")):
         return "noauth"
-    if any(k in s for k in ("not found", "404", "model")):
+    # The word "model" on its own is not a verdict - any sentence about a
+    # model contains it. Only the phrasings that mean the model is NOT there.
+    if any(k in s for k in ("not found", "404", "model_not_found",
+                            "unknown model", "no such model",
+                            "model is not supported", "does not exist")):
         return "nomodel"
     return "failed"
 
@@ -656,10 +677,17 @@ def probe(p: Provider, timeout: int = 90) -> dict:
 
 
 # A transport-level failure, not a verdict from the provider itself.
+#
+# A CAPACITY refusal is in here too, and it is worth saying why. The
+# provider said it will not serve right now; a second attempt a moment
+# later often will. Without this, one busy minute demotes a working
+# provider on the strength of a single request.
 TRANSIENT = ("timed out", "timeout", "timedout", "connection reset",
              "connection aborted", "connection refused", "remote end closed",
              "incompleteread", "temporarily unavailable", "bad gateway",
-             "service unavailable", "gateway timeout", "eof occurred")
+             "service unavailable", "gateway timeout", "eof occurred",
+             "at capacity", "high demand", "overloaded",
+             "try again in a few minutes", "higher service tier")
 
 
 def _is_transient(msg: str) -> bool:
