@@ -346,19 +346,23 @@ def _codex_call(p: Provider, prompt: str, timeout: int):
             return "", meta
 
         text = last.read_text(encoding="utf-8", errors="replace").strip() if last.is_file() else ""
-        if not text:
-            # Fall back to the JSONL stream.
-            for line in (r.stdout or "").splitlines():
-                try:
-                    ev = json.loads(line)
-                except Exception:
-                    continue
-                if ev.get("type") == "item.completed" and ev.get("item", {}).get("type") == "agent_message":
-                    text = str(ev["item"].get("text", "")).strip()
-                usage = ev.get("usage") or (ev.get("item") or {}).get("usage")
-                if isinstance(usage, dict):
-                    meta["tokens_in"] = usage.get("input_tokens", meta["tokens_in"])
-                    meta["tokens_out"] = usage.get("output_tokens", meta["tokens_out"])
+        # The JSONL is ALWAYS parsed for usage. The token counts are the
+        # signature that tells this provider apart from the others, so they
+        # must not depend on whether the answer came from the file or the
+        # stream. The CLI reports them on turn.completed.
+        for line in (r.stdout or "").splitlines():
+            try:
+                ev = json.loads(line)
+            except Exception:
+                continue
+            usage = ev.get("usage") or (ev.get("item") or {}).get("usage")
+            if isinstance(usage, dict):
+                meta["tokens_in"] = usage.get("input_tokens", meta["tokens_in"])
+                meta["tokens_out"] = usage.get("output_tokens", meta["tokens_out"])
+            if not text and ev.get("type") == "item.completed":
+                item = ev.get("item") or {}
+                if item.get("type") == "agent_message":
+                    text = str(item.get("text", "")).strip()
 
         if not text:
             meta["error"] = "the Codex CLI returned no message"
