@@ -93,13 +93,18 @@ class _Handler(BaseHTTPRequestHandler):
 
 @pytest.fixture(autouse=True)
 def isolated_ledger(tmp_path, monkeypatch):
-    """No test may write to the production ledger.
+    """No test may write to the production ledger or the production state.
 
     route() and call() record every attempt, so without this the suite would
     pollute the real spend log with rows named after test fixtures. The ledger
     is redirected into tmp_path for the whole test.
+
+    The last-known provider record is redirected too. It lives in the same
+    directory the dashboard reads, so a test provider named 't' would show up
+    in the live provider panel.
     """
     monkeypatch.setattr(pr, "LEDGER", tmp_path / "provider_ledger.jsonl")
+    monkeypatch.setattr(pr, "LAST_KNOWN", tmp_path / "provider_last_known.json")
     yield
 
 
@@ -444,3 +449,17 @@ def test_the_last_known_record_holds_no_secret_material(server, monkeypatch, tmp
     pr.probe(p)
     blob = lk.read_text(encoding="utf-8")
     assert "SUPER-SECRET-VALUE" not in blob, "the record contains the credential"
+
+
+def test_no_test_writes_to_the_production_last_known_record():
+    """A regression guard for the isolation of the last-known record.
+
+    It lives in the same directory the dashboard reads, so a test provider
+    would show up in the live provider panel. The autouse fixture redirects
+    it; this asserts the redirect is in place.
+    """
+    import inspect
+    src = inspect.getsource(pr.probe)
+    assert "_remember" in src, "the probe must record the state it observed"
+    fixture_src = inspect.getsource(isolated_ledger)
+    assert "LAST_KNOWN" in fixture_src, "the autouse fixture must redirect LAST_KNOWN"
