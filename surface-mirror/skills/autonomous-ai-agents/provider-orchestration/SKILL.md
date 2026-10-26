@@ -121,7 +121,16 @@ never to the rotation.
 
     pytest E:/ultron-memory/evolution-stack/tests/test_provider_router.py -q
 
-19 tests, isolated local HTTP server, no live provider and no real key.
+29 tests, isolated local HTTP server, no live provider and no real key. They
+cover the vault contract, the placeholder rule, the last-known record and
+its isolation from the production state.
+
+    pytest E:/ultron-memory/evolution-stack/tests/test_provider_routing_proof.py -q
+
+7 tests, and these are LIVE calls - they cost a few thousandths of a dollar
+and they are the only thing that actually proves the rotation reaches
+several different models. Do not mock them, and do not weaken the nonce
+check: a mocked version would prove exactly nothing.
 
 ## The estate gate watches this
 
