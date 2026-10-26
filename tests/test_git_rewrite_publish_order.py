@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 REWRITE = "C:/Users/KING/AppData/Local/hermes/scripts/git_identity/rewrite_remote.py"
+REWRITER = "C:/Users/KING/AppData/Local/hermes/scripts/git_identity/rewrite_keep_history.py"
 
 spec = importlib.util.spec_from_file_location("rewrite_remote", REWRITE)
 mod = importlib.util.module_from_spec(spec)
@@ -33,6 +34,9 @@ spec.loader.exec_module(mod)
 
 SOURCE = Path(REWRITE).read_text(encoding="utf-8", errors="replace")
 LINES = SOURCE.splitlines()
+# the module that actually rebuilds the commits - the target identity and
+# the "reuse the unchanged commit" rule live there
+REWRITER_SOURCE = Path(REWRITER).read_text(encoding="utf-8", errors="replace")
 
 
 def _line_of(needle):
@@ -105,7 +109,13 @@ def test_a_backup_bundle_is_written_before_the_push():
 # ----------------------------------------------------------- the scope
 
 def test_the_rewrite_covers_every_ref_not_just_the_default_branch():
-    assert '"--all"' in SOURCE, "the rewrite must cover every ref"
+    """Every branch AND every tag, not the default branch alone."""
+    assert "rewrite_keep_history.py" in SOURCE, (
+        "the rewrite must go through the history-preserving rewriter")
+    assert '"refs/heads/"' in SOURCE, "the branches must be enumerated"
+    assert '"refs/tags/"' in SOURCE, "the tags must be enumerated"
+    for ref in ("refs/heads/", "refs/tags/"):
+        assert ref in SOURCE, "the rewrite must cover %s" % ref
 
 
 def test_the_remote_is_verified_after_the_push():
@@ -115,14 +125,33 @@ def test_the_remote_is_verified_after_the_push():
 
 
 def test_the_local_identities_are_the_known_set():
-    """A rewritten commit must land on a LINKED dqikfox identity."""
-    assert "dqikfox@users.noreply.github.com" in SOURCE
+    """A rewritten commit must land on a LINKED dqikfox identity.
+
+    The target identity lives in the rewriter now - that is the module that
+    actually rebuilds the commits - so that is where it must be checked.
+    """
+    rewriter = REWRITER_SOURCE
+    assert "dqikfox@users.noreply.github.com" in rewriter
     assert "dqikfox" in mod.LOCAL_IDENTITIES or True
     # the linked noreply form must NOT be in the rewrite set - rewriting it
     # would be a no-op at best
     assert "dqikfox@users.noreply.github.com" not in mod.LOCAL_IDENTITIES
     # and the account-linked form is not a local identity either
     assert "110945741+dqikfox@users.noreply.github.com" not in mod.LOCAL_IDENTITIES
+
+
+def test_the_rewriter_reuses_the_unchanged_commits():
+    """The rewriter must NOT re-create every commit.
+
+    filter-branch re-creates every commit it walks, and it cannot re-sign a
+    GPG-signed commit, so it drops the signature and the SHA changes even
+    when the author, committer, tree, dates and message are identical. The
+    rewritten history then shares no commit with the original, and the push
+    has to carry the whole repository: 1,177 MB for faraday.
+    """
+    assert "mapping[sha] = sha" in REWRITER_SOURCE, (
+        "an unchanged commit must be REUSED, not re-created")
+    assert "commit-tree" in REWRITER_SOURCE
 
 
 def test_the_survivor_count_ignores_the_old_history():

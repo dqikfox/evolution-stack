@@ -39,18 +39,15 @@ LOCAL_IDENTITIES = {
     "dqikfox@local",
 }
 
-# one -e per pattern: a "|" between them would be a shell PIPE, not a grep
-# alternation, and the filter would silently never fire.
-_COND = " ".join("-e '%s'" % e for e in sorted(LOCAL_IDENTITIES))
-FILTER = (
-    "if printf '%s\\n%s\\n' \"$GIT_AUTHOR_EMAIL\" \"$GIT_COMMITTER_EMAIL\" | "
-    "grep -qxF " + _COND + " ; then "
-    "export GIT_AUTHOR_NAME='dqikfox'; "
-    "export GIT_AUTHOR_EMAIL='dqikfox@users.noreply.github.com'; "
-    "export GIT_COMMITTER_NAME='dqikfox'; "
-    "export GIT_COMMITTER_EMAIL='dqikfox@users.noreply.github.com'; "
-    "fi"
-)
+# The shell filter that `git filter-branch` used is gone. filter-branch
+# re-creates every commit it walks and cannot re-sign a GPG-signed commit,
+# so it drops the signature - and the SHA changes even when the author,
+# committer, tree, dates and message are all identical. On a signed
+# repository that leaves the rewritten history with no common ancestor
+# with the original, and the push carries the whole repository instead of
+# a delta. rewrite_keep_history.py reuses the original commit object for
+# anything whose metadata did not change, which keeps the history
+# connected. The filter below is kept only as a record of the old rule.
 
 ENV = dict(os.environ)
 ENV["FILTER_BRANCH_SQUELCH_WARNING"] = "1"
@@ -102,6 +99,18 @@ def count_ours_anywhere(repo):
     """How many local-identity commits exist at all, old history included."""
     out = git(repo, "log", "--format=%ae", "--all").stdout
     return sum(1 for e in out.splitlines() if e in LOCAL_IDENTITIES)
+
+
+def _branch_has_ours(repo, refname):
+    """Does this branch's OWN history contain a local identity?
+
+    The check is per branch, not over the whole repository. A branch that
+    only ever carried third-party commits has nothing to fix, and pushing
+    it - after a rewrite that changed every SHA in it - would upload the
+    entire repository for no reason.
+    """
+    out = git(repo, "log", "--format=%ae", refname).stdout
+    return any(e in LOCAL_IDENTITIES for e in out.splitlines())
 
 
 def _force_rmtree(path: Path) -> None:
@@ -160,23 +169,73 @@ def main(name, url, workdir=None):
         print("   nothing to rewrite", flush=True)
         return True
 
-    # rewrite every ref in the bare clone: branches, tags, notes, everything
-    r = subprocess.run([GIT, "filter-branch", "-f", "--env-filter", FILTER, "--", "--all"],
-                       cwd=str(work), capture_output=True, text=True, timeout=7200, env=ENV,
-                       encoding="utf-8", errors="replace")
+    # Rewrite every ref with the history-preserving rewriter.
+    #
+    # NOT filter-branch. filter-branch re-creates every commit it walks, and
+    # it cannot re-sign a GPG-signed commit, so it drops the signature - the
+    # SHA changes even when the author, committer, tree, dates and message
+    # are identical. On a signed repository that leaves the rewritten
+    # history with NO common ancestor with the original, and the push has to
+    # carry the whole repository: 1,177 MB for faraday, for a branch that
+    # had nothing to fix.
+    #
+    # The rewriter below reuses the original commit object for anything
+    # whose metadata did not change, so the shared ancestors keep their
+    # SHAs and the push carries a delta.
+    refs = git(str(work), "for-each-ref", "--format=%(refname)", "refs/heads/").stdout.split()
+    refs += git(str(work), "for-each-ref", "--format=%(refname)", "refs/tags/").stdout.split()
+    cmd = [sys.executable, str(Path(__file__).with_name("rewrite_keep_history.py")),
+           str(work)]
+    for ref in refs:
+        cmd += ["--ref", ref]
+    r = subprocess.run(cmd, cwd=str(work), capture_output=True, text=True, timeout=7200,
+                       env=ENV, encoding="utf-8", errors="replace")
+    print(r.stdout.rstrip(), flush=True)
     if r.returncode != 0:
         print("   REWRITE FAILED: %s" % (r.stderr or "").strip()[-300:], flush=True)
         return False
-
-    # filter-branch leaves refs/original/* behind, keeping the old history
-    # reachable. That reachability is REQUIRED until the push has happened -
-    # see the note at the cleanup step below - so nothing is removed yet.
 
     after = count_ours(str(work))
     print("   local-identity commits after:  %d" % after, flush=True)
     if after != 0:
         print("   STILL PRESENT - not pushing", flush=True)
         return False
+
+    # A branch that never had a local identity must NOT be pushed.
+    #
+    # filter-branch cannot re-sign a GPG-signed commit, so it drops the
+    # signature - and the commit's SHA changes even though its author,
+    # committer, tree and message are all identical. A repo whose history
+    # is signed therefore has NO common ancestor between its old and its
+    # rewritten history, and pushing any rewritten branch means uploading
+    # the WHOLE repository: on faraday that was 1,177 MB for a branch that
+    # had nothing to fix.
+    #
+    # A branch whose history contains no local identity is left exactly as
+    # it is. The rewrite still runs over it - that is how the check below
+    # is made - but the ref is restored to its original SHA and it is not
+    # pushed.
+    # A branch that never had a local identity is left exactly as it is.
+    #
+    # The rewriter above reuses the original commit object for anything
+    # whose metadata did not change, so a branch that had nothing to fix
+    # comes back with its original SHA. Such a branch must not be pushed:
+    # its SHA is unchanged, so the push would be a no-op at best, and the
+    # faraday experience showed what happens when a rewrite does change it
+    # anyway - the whole repository gets uploaded for no reason.
+    clean_branches = []
+    for line in git(str(work), "for-each-ref",
+                    "--format=%(refname) %(objectname)", "refs/heads/").stdout.splitlines():
+        refname, _, sha = line.partition(" ")
+        if not sha:
+            continue
+        original = remotes.get(refname.replace("refs/heads/", ""))
+        if original and original == sha:
+            # unchanged by the rewrite: nothing to publish
+            clean_branches.append(refname.replace("refs/heads/", ""))
+    if clean_branches:
+        print("   %d branch(es) needed no rewrite and were left alone: %s" % (
+            len(clean_branches), ", ".join(clean_branches[:8])), flush=True)
 
     # A backup bundle BEFORE the push, so a failed or interrupted publish can
     # always be recovered from the original history.
@@ -204,14 +263,21 @@ def main(name, url, workdir=None):
 
     ok = 0
     failed = []
+    skipped = 0
     for br, sha in remotes.items():
+        if br in clean_branches:
+            # it never had a local identity, so there is nothing to publish
+            skipped += 1
+            continue
         p = git(str(work), "push", "--force-with-lease=%s:%s" % (br, sha), "origin",
                 "%s:%s" % (br, br), timeout=PUSH_TIMEOUT)
         if p.returncode == 0:
             ok += 1
         else:
             failed.append((br, (p.stderr or "").strip()[-120:]))
-    print("   pushed %d/%d branches" % (ok, len(remotes)), flush=True)
+    print("   pushed %d/%d branches%s" % (
+        ok, len(remotes) - skipped,
+        (", %d left alone" % skipped) if skipped else ""), flush=True)
     for br, err in failed[:10]:
         print("     FAILED %s: %s" % (br[:60], err), flush=True)
     if len(failed) > 10:

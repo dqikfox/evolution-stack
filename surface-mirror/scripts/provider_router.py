@@ -124,7 +124,18 @@ REGISTRY: list[Provider] = [
              key_env="OLLAMA_API_KEY", key_vault="OLLAMA_API_KEY",
              cost_tier="ollama-cloud", priority=50,
              note="Ollama Cloud, paid tier. The env key is set and working."),
-    Provider("ollama-local", "ollama", "http://127.0.0.1:11434", "starscream:latest",
+    # The local model is the 64K tag, and the tag matters.
+    #
+    # `starscream:latest` and `starscream-64k:latest` are the same weights
+    # with a different num_ctx (128000 against 65536). Ollama runs a
+    # SEPARATE server process for each, so asking for the 128K tag while
+    # the 64K one is resident means an EIGHTEEN GIGABYTE second copy - and
+    # on a host that is already at 98% memory with 20 GB swapped out, that
+    # copy is what tips the machine into thrashing.
+    #
+    # The 64K tag is also the one that satisfies the standing rule that no
+    # model the user interacts with may have a context below 64K.
+    Provider("ollama-local", "ollama", "http://127.0.0.1:11434", "starscream-64k:latest",
              cost_tier="local", priority=60, local=True,
              note="The local 3090. Free, offline, 64K context."),
     Provider("chatgpt", "codex", "", "gpt-6-astra",
@@ -304,9 +315,15 @@ CODEX_TIMEOUT = 300
 
 # A local provider is a process on this host, not a link across the internet.
 # It has no network latency, so a miss is a cold start - a model loading, an
-# index opening - and not a slow route. 45s is enough for a local cold start
-# and short enough that a genuinely dead local provider is noticed.
-LOCAL_TIMEOUT = 45
+# index opening - and not a slow route.
+#
+# 45s was enough for a small model. It is not enough for THIS one: the local
+# model is an 18 GB set of weights with a 64K context, and loading it from
+# the local NVMe takes longer than that on a host that is also swapping.
+# A timeout here would be reported as a failed provider when the provider
+# was merely cold, and a false failure is worse than a slow answer.
+# The floor stays at 45s by the house rule; the truth is 120.
+LOCAL_TIMEOUT = 120
 
 
 def _codex_call(p: Provider, prompt: str, timeout: int):
