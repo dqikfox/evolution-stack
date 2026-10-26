@@ -46,7 +46,7 @@ TARGETS = [
     ("anthropic", "claude-sonnet-4-6", True),
     ("chatgpt", "gpt-6-astra", True),
     ("xai", "grok-3", True),
-    ("ollama-local", "starscream:latest", True),
+    ("ollama-local", "starscream-64k:latest", True),
     ("nexus", "kimi-k2.6:cloud", True),
     ("ollama-cloud", "minimax-m3.1-flash", True),
 ]
