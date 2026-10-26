@@ -1,14 +1,14 @@
 {
-  "ts": 1792906097.3958569,
+  "ts": 1793015078.553727,
   "totals": {
-    "skills": 46,
+    "skills": 45,
     "cron_jobs": 10,
-    "scripts": 49,
+    "scripts": 77,
     "mcp_servers": 15,
     "prior_attempts": 2,
     "profile_duplicates": 1,
     "verdicts": {
-      "KEEP": 102,
+      "KEEP": 129,
       "MERGE": 3,
       "DUPLICATE": 1
     }
@@ -84,7 +84,7 @@
       "is_category": true,
       "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\autonomous-ai-agents\\claude-code\\SKILL.md",
       "description": "",
-      "files": 48
+      "files": 49
     },
     {
       "id": "axolotl",
@@ -165,7 +165,7 @@
       "is_category": true,
       "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\devops\\android-adb-media-restore\\SKILL.md",
       "description": "",
-      "files": 5
+      "files": 6
     },
     {
       "id": "elevenlabs-personal-voice",
@@ -237,7 +237,7 @@
       "is_category": true,
       "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\infrastructure\\android-simplex-media-archiver\\SKILL.md",
       "description": "",
-      "files": 28
+      "files": 30
     },
     {
       "id": "mainframe-bootstrap",
@@ -361,9 +361,9 @@
       "kind": "skill",
       "has_manifest": true,
       "is_category": true,
-      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\software-development\\bulk-file-surgery\\SKILL.md",
+      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\software-development\\codebase-inspection\\SKILL.md",
       "description": "",
-      "files": 53
+      "files": 51
     },
     {
       "id": "telegram-3bot-blast",
@@ -372,15 +372,6 @@
       "is_category": false,
       "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\telegram-3bot-blast\\SKILL.md",
       "description": "Telegram bots default/droid/ultron via mcp_telegram_send.",
-      "files": 1
-    },
-    {
-      "id": "telegram-export-analysis",
-      "kind": "skill",
-      "has_manifest": true,
-      "is_category": false,
-      "manifest_path": "C:\\Users\\KING\\AppData\\Local\\hermes\\skills\\telegram-export-analysis\\SKILL.md",
-      "description": "Use when analyzing Telegram HTML chat exports.",
       "files": 1
     },
     {
@@ -609,6 +600,22 @@
       "purpose": "health"
     },
     {
+      "id": "apply_brand_fixes.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\apply_brand_fixes.py",
+      "lines": 136,
+      "hash": "7a77e899ef661993",
+      "purpose": "utility"
+    },
+    {
+      "id": "chatgpt_worker.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\chatgpt_worker.py",
+      "lines": 134,
+      "hash": "d2f4eee3fec6c4c8",
+      "purpose": "utility"
+    },
+    {
       "id": "check_service_liveness.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\check_service_liveness.py",
@@ -625,11 +632,27 @@
       "purpose": "memory"
     },
     {
+      "id": "estate_watchdog.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\estate_watchdog.py",
+      "lines": 220,
+      "hash": "a236794d7f6b424d",
+      "purpose": "health"
+    },
+    {
+      "id": "estate_watchdog_contract.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\estate_watchdog_contract.py",
+      "lines": 101,
+      "hash": "5cf936d942d71324",
+      "purpose": "health"
+    },
+    {
       "id": "evolution_scout.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\evolution_scout.py",
-      "lines": 165,
-      "hash": "0de09f0493a4bcef",
+      "lines": 189,
+      "hash": "ce2a090bad22387c",
       "purpose": "evolution"
     },
     {
@@ -638,6 +661,86 @@
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\evolution_stack_cycle.py",
       "lines": 55,
       "hash": "1d970b94fe6ffb73",
+      "purpose": "health"
+    },
+    {
+      "id": "extract_public_copy.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\extract_public_copy.py",
+      "lines": 120,
+      "hash": "2f6c0f7352d24274",
+      "purpose": "utility"
+    },
+    {
+      "id": "fix_api_server_platform.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\fix_api_server_platform.py",
+      "lines": 217,
+      "hash": "6bffbf344c0a5083",
+      "purpose": "health"
+    },
+    {
+      "id": "push_all_branches.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\git_identity\\push_all_branches.py",
+      "lines": 77,
+      "hash": "5361655b9067951d",
+      "purpose": "utility"
+    },
+    {
+      "id": "push_rewritten.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\git_identity\\push_rewritten.py",
+      "lines": 40,
+      "hash": "92d30905c8b1d7d2",
+      "purpose": "utility"
+    },
+    {
+      "id": "rewrite_identity.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\git_identity\\rewrite_identity.py",
+      "lines": 59,
+      "hash": "ac162e95929931f6",
+      "purpose": "utility"
+    },
+    {
+      "id": "rewrite_local_identities.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\git_identity\\rewrite_local_identities.py",
+      "lines": 164,
+      "hash": "dca3b7c752061b22",
+      "purpose": "utility"
+    },
+    {
+      "id": "rewrite_queue.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\git_identity\\rewrite_queue.py",
+      "lines": 29,
+      "hash": "96e118a2cb185d86",
+      "purpose": "utility"
+    },
+    {
+      "id": "rewrite_remote.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\git_identity\\rewrite_remote.py",
+      "lines": 275,
+      "hash": "320e3cc624b654a8",
+      "purpose": "backup"
+    },
+    {
+      "id": "verify_all_branches.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\git_identity\\verify_all_branches.py",
+      "lines": 265,
+      "hash": "5bf8392719f809bd",
+      "purpose": "health"
+    },
+    {
+      "id": "hermes_remote.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\hermes_remote.py",
+      "lines": 565,
+      "hash": "6259c973cfdb4a3a",
       "purpose": "health"
     },
     {
@@ -662,6 +765,14 @@
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\host_load_watchdog.py",
       "lines": 231,
       "hash": "121c0bd7bb35fa08",
+      "purpose": "health"
+    },
+    {
+      "id": "krysys_supervisor.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\krysys_supervisor.py",
+      "lines": 278,
+      "hash": "9324f2c2b1576e57",
       "purpose": "health"
     },
     {
@@ -745,6 +856,14 @@
       "purpose": "memory"
     },
     {
+      "id": "nexus_launcher_contract.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\nexus_launcher_contract.py",
+      "lines": 323,
+      "hash": "2d8e55f63f413869",
+      "purpose": "health"
+    },
+    {
       "id": "ollama-health.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\ollama-health.py",
@@ -769,12 +888,76 @@
       "purpose": "utility"
     },
     {
+      "id": "pixel_launcher_contract.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\pixel_launcher_contract.py",
+      "lines": 171,
+      "hash": "bbfa8f742017d991",
+      "purpose": "health"
+    },
+    {
+      "id": "probe_chatgpt_models.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\probe_chatgpt_models.py",
+      "lines": 69,
+      "hash": "2689907fc4969b92",
+      "purpose": "utility"
+    },
+    {
+      "id": "probe_chatgpt_work.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\probe_chatgpt_work.py",
+      "lines": 111,
+      "hash": "3838fe6710582330",
+      "purpose": "utility"
+    },
+    {
+      "id": "probe_codex_usage.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\probe_codex_usage.py",
+      "lines": 56,
+      "hash": "ac5672ee8775af4a",
+      "purpose": "utility"
+    },
+    {
       "id": "probe_http.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\probe_http.py",
-      "lines": 37,
-      "hash": "b51d046369655958",
+      "lines": 61,
+      "hash": "17c564eba0d6f2e5",
       "purpose": "health"
+    },
+    {
+      "id": "probe_router_chatgpt.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\probe_router_chatgpt.py",
+      "lines": 64,
+      "hash": "2ca32b43196d5034",
+      "purpose": "health"
+    },
+    {
+      "id": "provider_router.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\provider_router.py",
+      "lines": 791,
+      "hash": "93cfe68cda59876f",
+      "purpose": "health"
+    },
+    {
+      "id": "register_pixel_service.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\register_pixel_service.py",
+      "lines": 108,
+      "hash": "2d945637f1cc6d35",
+      "purpose": "health"
+    },
+    {
+      "id": "register_service.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\register_service.py",
+      "lines": 44,
+      "hash": "3fdbdd66cd357c67",
+      "purpose": "network"
     },
     {
       "id": "restart_nexus.py",
@@ -791,6 +974,14 @@
       "lines": 49,
       "hash": "b3752b89c0d7ed73",
       "purpose": "memory"
+    },
+    {
+      "id": "run_brand_review.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\run_brand_review.py",
+      "lines": 141,
+      "hash": "28a2c016526b6b88",
+      "purpose": "inference"
     },
     {
       "id": "run_throne_health.py",
@@ -820,8 +1011,8 @@
       "id": "service_control.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\service_control.py",
-      "lines": 262,
-      "hash": "5098092b077f2fbb",
+      "lines": 457,
+      "hash": "79fc96fce7eb76e7",
       "purpose": "health"
     },
     {
@@ -860,9 +1051,17 @@
       "id": "spawn_detached.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\spawn_detached.py",
-      "lines": 98,
-      "hash": "14c8b30f2b8fddd2",
+      "lines": 104,
+      "hash": "160613f8a519863c",
       "purpose": "utility"
+    },
+    {
+      "id": "start_discovery.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\start_discovery.py",
+      "lines": 45,
+      "hash": "c8a2dc72a85b7e5a",
+      "purpose": "network"
     },
     {
       "id": "start_tesseract.py",
@@ -892,9 +1091,9 @@
       "id": "throne_discovery.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\throne_discovery.py",
-      "lines": 893,
-      "hash": "4406c3357ef5e00a",
-      "purpose": "memory"
+      "lines": 912,
+      "hash": "87391be6cf550f4d",
+      "purpose": "health"
     },
     {
       "id": "throne_health.py",
@@ -929,12 +1128,28 @@
       "purpose": "memory"
     },
     {
+      "id": "validate_service_integrity.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\validate_service_integrity.py",
+      "lines": 130,
+      "hash": "fd17fe7b50466a9b",
+      "purpose": "health"
+    },
+    {
       "id": "verify_tesseract_liveness.py",
       "kind": "script",
       "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\verify_tesseract_liveness.py",
       "lines": 56,
       "hash": "266915f366f6287f",
       "purpose": "health"
+    },
+    {
+      "id": "verify_test_run.py",
+      "kind": "script",
+      "path": "C:\\Users\\KING\\AppData\\Local\\hermes\\scripts\\verify_test_run.py",
+      "lines": 250,
+      "hash": "9fa45447bd43df12",
+      "purpose": "utility"
     },
     {
       "id": "wait_for_http.py",
@@ -1105,45 +1320,70 @@
             "_health_probe.py",
             "_run_wd.py",
             "check_service_liveness.py",
+            "estate_watchdog.py",
+            "estate_watchdog_contract.py",
             "evolution_stack_cycle.py",
+            "fix_api_server_platform.py",
+            "verify_all_branches.py",
+            "hermes_remote.py",
             "hh.py",
             "hh2.py",
             "host_load_watchdog.py",
+            "krysys_supervisor.py",
             "mcp_call.py",
+            "nexus_launcher_contract.py",
             "ollama-health.py",
             "ollama-server.py",
+            "pixel_launcher_contract.py",
             "probe_http.py",
+            "probe_router_chatgpt.py",
+            "provider_router.py",
+            "register_pixel_service.py",
             "restart_nexus.py",
             "run_throne_health.py",
             "service_control.py",
             "service_gatekeeper.py",
             "shop_server.py",
             "start_tesseract.py",
+            "throne_discovery.py",
             "throne_health.py",
             "throne_watchdog.py",
+            "validate_service_integrity.py",
             "verify_tesseract_liveness.py",
             "wait_for_http.py",
             "watchdog.py",
             "workspace-watchdog.py",
             "world_scraper.py"
           ],
-          "count": 24
+          "count": 37
         },
         {
           "purpose": "utility",
           "files": [
+            "apply_brand_fixes.py",
+            "chatgpt_worker.py",
+            "extract_public_copy.py",
+            "push_all_branches.py",
+            "push_rewritten.py",
+            "rewrite_identity.py",
+            "rewrite_local_identities.py",
+            "rewrite_queue.py",
             "list-orders.py",
             "manual_outreach.py",
             "order-digest.py",
+            "probe_chatgpt_models.py",
+            "probe_chatgpt_work.py",
+            "probe_codex_usage.py",
             "secret_resolver.py",
             "shop-launcher.py",
             "shop_bot.py",
             "spawn_detached.py",
             "telegram_alert.py",
+            "verify_test_run.py",
             "wait_for_services.py",
             "wrap-formatprice.py"
           ],
-          "count": 10
+          "count": 22
         },
         {
           "purpose": "memory",
@@ -1154,10 +1394,9 @@
             "memory_safety_check.py",
             "nexus_core_sync.py",
             "robust_nexus_sync.py",
-            "throne_discovery.py",
             "throttle-audit.py"
           ],
-          "count": 8
+          "count": 7
         },
         {
           "purpose": "evolution",
@@ -1172,8 +1411,18 @@
         {
           "purpose": "network",
           "files": [
+            "register_service.py",
+            "start_discovery.py",
             "tailnet_sync.py",
             "throne_inventory_updater.py"
+          ],
+          "count": 4
+        },
+        {
+          "purpose": "backup",
+          "files": [
+            "rewrite_remote.py",
+            "mcp_doctor.py"
           ],
           "count": 2
         }
@@ -1391,11 +1640,6 @@
       "reason": ""
     },
     {
-      "id": "telegram-export-analysis",
-      "verdict": "KEEP",
-      "reason": ""
-    },
-    {
       "id": "tesseract-visual-verify",
       "verdict": "KEEP",
       "reason": ""
@@ -1481,6 +1725,16 @@
       "reason": ""
     },
     {
+      "id": "apply_brand_fixes.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "chatgpt_worker.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
       "id": "check_service_liveness.py",
       "verdict": "KEEP",
       "reason": ""
@@ -1491,12 +1745,72 @@
       "reason": ""
     },
     {
+      "id": "estate_watchdog.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "estate_watchdog_contract.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
       "id": "evolution_scout.py",
       "verdict": "KEEP",
       "reason": ""
     },
     {
       "id": "evolution_stack_cycle.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "extract_public_copy.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "fix_api_server_platform.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "push_all_branches.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "push_rewritten.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "rewrite_identity.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "rewrite_local_identities.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "rewrite_queue.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "rewrite_remote.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "verify_all_branches.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "hermes_remote.py",
       "verdict": "KEEP",
       "reason": ""
     },
@@ -1512,6 +1826,11 @@
     },
     {
       "id": "host_load_watchdog.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "krysys_supervisor.py",
       "verdict": "KEEP",
       "reason": ""
     },
@@ -1566,6 +1885,11 @@
       "reason": ""
     },
     {
+      "id": "nexus_launcher_contract.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
       "id": "ollama-health.py",
       "verdict": "KEEP",
       "reason": ""
@@ -1581,7 +1905,47 @@
       "reason": ""
     },
     {
+      "id": "pixel_launcher_contract.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "probe_chatgpt_models.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "probe_chatgpt_work.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "probe_codex_usage.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
       "id": "probe_http.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "probe_router_chatgpt.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "provider_router.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "register_pixel_service.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "register_service.py",
       "verdict": "KEEP",
       "reason": ""
     },
@@ -1592,6 +1956,11 @@
     },
     {
       "id": "robust_nexus_sync.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "run_brand_review.py",
       "verdict": "KEEP",
       "reason": ""
     },
@@ -1641,6 +2010,11 @@
       "reason": ""
     },
     {
+      "id": "start_discovery.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
       "id": "start_tesseract.py",
       "verdict": "KEEP",
       "reason": ""
@@ -1681,7 +2055,17 @@
       "reason": ""
     },
     {
+      "id": "validate_service_integrity.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
       "id": "verify_tesseract_liveness.py",
+      "verdict": "KEEP",
+      "reason": ""
+    },
+    {
+      "id": "verify_test_run.py",
       "verdict": "KEEP",
       "reason": ""
     },

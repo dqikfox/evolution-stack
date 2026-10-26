@@ -326,23 +326,48 @@ def _codex_call(p: Provider, prompt: str, timeout: int):
     # the final message to a file, which is the most reliable extraction.
     with tempfile.TemporaryDirectory() as tmp:
         last = Path(tmp) / "last.txt"
+        # The prompt goes in on STDIN, not on the command line. A Windows
+        # command line is capped at 32,767 characters, and a long prompt
+        # used to fail the whole call with WinError 206. `codex exec -`
+        # reads the instructions from stdin, which has no such limit.
         cmd = [binary, "exec", "--skip-git-repo-check", "--sandbox", "read-only",
                "--ephemeral", "--json", "-m", p.model,
-               "-o", str(last), prompt]
+               "-o", str(last), "-"]
         env = dict(os.environ)
         # The child must not inherit a foreign Python/virtualenv state.
         for k in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "VIRTUAL_ENV"):
             env.pop(k, None)
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                               env=env, encoding="utf-8", errors="replace")
+            r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                               timeout=timeout, env=env, encoding="utf-8", errors="replace")
         except subprocess.TimeoutExpired:
             meta["error"] = "timeout after %ss" % timeout
             return "", meta
 
         if r.returncode != 0 and not last.is_file():
-            err = (r.stderr or r.stdout or "").strip()
-            meta["error"] = (err.splitlines()[-1][:160] if err else "codex rc=%s" % r.returncode)
+            # The real reason is in the event stream, not in the last line of
+            # stderr. The stderr of a codex run is full of unrelated noise -
+            # a stale MCP server can log a fatal 404 there - and taking the
+            # last line of it reported "404" for a provider that was really
+            # out of plan quota. The turn.failed event carries the truth.
+            reason = ""
+            for line in (r.stdout or "").splitlines():
+                try:
+                    ev = json.loads(line)
+                except Exception:
+                    continue
+                if ev.get("type") in ("turn.failed", "error"):
+                    err_obj = ev.get("error")
+                    if isinstance(err_obj, dict):
+                        reason = str(err_obj.get("message") or err_obj)[:200]
+                    elif err_obj:
+                        reason = str(err_obj)[:200]
+                    if reason:
+                        break
+            if not reason:
+                err = (r.stderr or r.stdout or "").strip()
+                reason = (err.splitlines()[-1][:200] if err else "codex rc=%s" % r.returncode)
+            meta["error"] = reason
             return "", meta
 
         text = last.read_text(encoding="utf-8", errors="replace").strip() if last.is_file() else ""
@@ -520,7 +545,14 @@ def _err(body) -> str:
 def classify(err: str) -> str:
     """Distinguish 'cannot pay' from 'cannot authenticate' from 'broken'."""
     s = (err or "").lower()
-    if any(k in s for k in ("credit", "quota", "insufficient", "billing", "payment required")):
+    # A plan cap is a BLOCKED condition, not a failure. "You have hit your
+    # usage limit, upgrade to Pro" means the credential is valid and the
+    # subscription is real, but the plan will not serve more right now.
+    # A RATE limit is deliberately NOT in this list: that one is transient
+    # and the next call may well succeed.
+    if any(k in s for k in ("credit", "quota", "insufficient", "billing",
+                             "payment required", "usage limit", "upgrade to",
+                             "exhausted")):
         return "blocked"
     if any(k in s for k in ("api key", "unauthorized", "authentication", "401", "invalid")):
         return "noauth"
@@ -713,8 +745,12 @@ def route(prompt: str, only: str | None = None, model: str | None = None,
                     "error": str(e)[:140], "status": classify(str(e))}
             record(meta)
             attempts.append(meta)
-    raise RuntimeError("every provider failed: %s" %
+    err = RuntimeError("every provider failed: %s" %
                        "; ".join("%s=%s" % (a["provider"], a["status"]) for a in attempts))
+    # the per-provider reasons travel with the error, so a caller can see
+    # WHY each one was skipped instead of only that the rotation failed
+    err.attempts = attempts
+    raise err
 
 
 # ---------------------------------------------------------------- cli
@@ -763,7 +799,31 @@ def main() -> int:
         try:
             text, meta = route(a.prompt, a.provider, a.model, a.max_tokens, a.timeout)
         except Exception as e:
-            print("ROUTE FAILED: %s" % e, file=sys.stderr)
+            # A caller that asked for JSON must ALWAYS get JSON. Emitting a
+            # bare line on stderr left every consumer - the routing proof,
+            # the review rotation, the panel - with an unparseable stream and
+            # no way to tell a quota from a defect.
+            if a.json:
+                # The summary string ("every provider failed: chatgpt=blocked")
+                # is useless on its own - it hides the reason. The reason
+                # lives in the attempt, so the attempt leads and the summary
+                # keeps the whole story.
+                attempts = getattr(e, "attempts", [])
+                lead = attempts[0] if attempts else {}
+                print(json.dumps({
+                    "text": "",
+                    "ok": False,
+                    "error": lead.get("error") or str(e)[:400],
+                    "status": lead.get("status") or classify(str(e)),
+                    "provider": lead.get("provider") or a.provider,
+                    "model": lead.get("model") or a.model,
+                    "summary": str(e)[:400],
+                    # why each provider was skipped, so a quota is
+                    # distinguishable from a defect at a glance
+                    "attempts": attempts,
+                }, indent=2))
+            else:
+                print("ROUTE FAILED: %s" % e, file=sys.stderr)
             return 1
         if a.json:
             print(json.dumps({"text": text, **meta}, indent=2))

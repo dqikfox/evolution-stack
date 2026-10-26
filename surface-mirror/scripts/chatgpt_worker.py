@@ -60,12 +60,16 @@ def run(task: str, cwd: str | None = None, read_only: bool = False,
         raise SystemExit("the working directory does not exist: %s" % work)
 
     sandbox = "read-only" if read_only else "workspace-write"
+    # The task goes in on STDIN, not on the command line. A Windows command
+    # line is capped at 32,767 characters, so a long task used to fail the
+    # whole call with WinError 206. `codex exec -` reads the instructions
+    # from stdin, which has no such limit.
     cmd = [binary, "exec", "--skip-git-repo-check", "--sandbox", sandbox,
-           "--ephemeral", "--json", "-m", model, "-C", str(work), task]
+           "--ephemeral", "--json", "-m", model, "-C", str(work), "-"]
 
     t0 = time.time()
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+        r = subprocess.run(cmd, input=task, capture_output=True, text=True, timeout=timeout,
                            env=_env(), encoding="utf-8", errors="replace")
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "timeout after %ss" % timeout,

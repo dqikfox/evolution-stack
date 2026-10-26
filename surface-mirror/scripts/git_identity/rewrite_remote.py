@@ -86,6 +86,20 @@ def git(repo, *args, timeout=3600):
 
 
 def count_ours(repo):
+    """How many local-identity commits survive in the REWRITTEN refs.
+
+    `--branches --tags`, not `--all`. The old history stays reachable
+    through `refs/original/*` until after the push - that reachability is
+    what gives the push its common base - and `--all` would count those
+    old commits too, so the check would report "STILL PRESENT" for a
+    rewrite that actually worked.
+    """
+    out = git(repo, "log", "--format=%ae", "--branches", "--tags").stdout
+    return sum(1 for e in out.splitlines() if e in LOCAL_IDENTITIES)
+
+
+def count_ours_anywhere(repo):
+    """How many local-identity commits exist at all, old history included."""
     out = git(repo, "log", "--format=%ae", "--all").stdout
     return sum(1 for e in out.splitlines() if e in LOCAL_IDENTITIES)
 

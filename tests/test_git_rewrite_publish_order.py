@@ -16,7 +16,9 @@ push has happened.
 
     pytest tests/test_git_rewrite_publish_order.py -q
 """
+import ast
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 
@@ -121,3 +123,33 @@ def test_the_local_identities_are_the_known_set():
     assert "dqikfox@users.noreply.github.com" not in mod.LOCAL_IDENTITIES
     # and the account-linked form is not a local identity either
     assert "110945741+dqikfox@users.noreply.github.com" not in mod.LOCAL_IDENTITIES
+
+
+def test_the_survivor_count_ignores_the_old_history():
+    """The check must not count the commits the rewrite is keeping on purpose.
+
+    The old history stays reachable through `refs/original/*` until after
+    the push. A count that used `--all` would see those old commits and
+    report "STILL PRESENT - not pushing" for a rewrite that worked
+    perfectly. The faraday rewrite was rejected by exactly this.
+    """
+    tree = ast.parse(inspect.getsource(mod.count_ours))
+    fn = tree.body[0]
+    # the code, not the docstring: a docstring that explains the rule
+    # mentions "--all" as the thing to avoid, and must not fail the test
+    literals = [n.value for n in ast.walk(fn)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                and n is not fn.body[0].value]
+    joined = " ".join(literals)
+    assert "--all" not in joined, \
+        "count_ours must not count refs/original/* - it would fail a " \
+        "successful rewrite.  The rev args were: %s" % joined
+    assert "--branches" in joined and "--tags" in joined, joined
+    # and there must be a way to see the old history, for the audit
+    assert hasattr(mod, "count_ours_anywhere")
+    anywhere_tree = ast.parse(inspect.getsource(mod.count_ours_anywhere))
+    anywhere_fn = anywhere_tree.body[0]
+    anywhere = " ".join(n.value for n in ast.walk(anywhere_fn)
+                        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                        and n is not anywhere_fn.body[0].value)
+    assert "--all" in anywhere, "the anywhere-count must see everything"
