@@ -164,6 +164,40 @@ for addr in ['127.0.0.1', 'localhost']:
 - **WebSocket endpoints.** Serveo proxies HTTP only; long-poll /
   WebSocket / Server-Sent Events don't survive the tunnel.
 
+## A tunnel must be verified BY ITS BODY, not by its status code
+
+A tunnel that answers `200 OK` with the WRONG application is worse than no tunnel at all - it looks healthy, every probe passes, and the person following the link lands on someone else's software.
+
+The real case: an app moved off port 8766 because QMS had taken it, but the gateway in front of it still proxied to 8766. Every local check said "200 OK" and the external link served QMS.
+
+The rule:
+
+```python
+import hashlib, urllib.request
+g = lambda u: hashlib.sha256(urllib.request.urlopen(u, timeout=45).read()).hexdigest()
+assert g(PUBLIC_URL) == g(LOCAL_URL)   # the bodies must be IDENTICAL
+```
+
+A status code cannot tell two applications apart. A byte comparison can. And put the **body marker** in the launcher's own probe, so a service whose port is shared with a stranger is never started on the wrong port.
+
+## A tunnel that points at the wrong port returns 502
+
+`tailscale funnel --bg 443` does NOT mean "proxy 443 somewhere" - it creates a handler for port 443 whose TARGET is port 443, and the result is a 502. Give the funnel the target instead:
+
+```
+tailscale funnel --bg http://127.0.0.1:8767
+```
+
+That sets the HTTPS handler to 8767 AND turns the funnel on. Doing `tailscale funnel --bg 8444` after `tailscale serve --bg --https=8444 ...` creates a double hop (443 -> 8444 -> target) and the 443 entry answers 502.
+
+## `start /b` hangs the caller - use spawn_detached.py
+
+`start "" /b prog` gives the child the console handles. A caller that captured stdout into a pipe (an agent tool, CI, `$(...)`) then waits for the CHILD to exit, not for the launcher, and the pipeline hangs forever. `spawn_detached.py` uses Python's `close_fds=True`, so the child inherits nothing but its log file. Use it for every long-lived child - tunnels included.
+
+## A negative result needs a control
+
+When a third-party fetcher says your public URL is unreachable, fetch a URL that is KNOWN to work with the SAME fetcher before you believe it. A fetch proxy that answers 522 for everything - including the working control - is a broken proxy, not a broken tunnel. Check the control first.
+
 ## Related Skills
 
 - `throne-network-discovery` — for the THRONE-side port/mount
