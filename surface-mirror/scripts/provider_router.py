@@ -115,10 +115,8 @@ REGISTRY: list[Provider] = [
     Provider("openai", "openai", "https://api.openai.com/v1", "gpt-5.5",
              key_vault="OpenAI Project Key",
              cost_tier="openai", priority=30,
-             note="ChatGPT. Key in 1Password as 'OpenAI Project Key'; the env var "
-                  "OPENAI_API_KEY is a 'nexus-local' placeholder and will NOT work here. "
-                  "The key is valid but the account has no credits - add credit at "
-                  "platform.openai.com/settings/organization/billing/ to unblock."),
+             note="ChatGPT API. The key in 1Password has no credits. The env var "
+                  "OPENAI_API_KEY is a 'nexus-local' placeholder and will not work here."),
     Provider("nexus", "openai", "http://127.0.0.1:8650/v1", "kimi-k2.6:cloud",
              cost_tier="local", priority=40, local=True,
              note="NEXUS CORE as an OpenAI-compatible endpoint. Local models, zero cost."),
@@ -131,12 +129,8 @@ REGISTRY: list[Provider] = [
              note="The local 3090. Free, offline, 64K context."),
     Provider("chatgpt", "codex", "", "gpt-6-astra",
              cost_tier="chatgpt", priority=25, local=True,
-             note="ChatGPT Plus via the Codex CLI's OAuth session "
-                  "(~/.codex/auth.json, auth_mode: chatgpt). No API key and no credit "
-                  "balance - it rides the Plus subscription. The CLI, not the raw "
-                  "HTTP API: the OAuth token is scoped for the Codex backend, and "
-                  "the plain /backend-api/codex/models endpoint returns an empty "
-                  "list even for an entitled account."),
+             note="ChatGPT Plus via the Codex CLI's OAuth session. No API key and no "
+                  "credit balance - it rides the Plus subscription."),
 ]
 
 
@@ -308,6 +302,12 @@ CODEX_BIN_FALLBACK = r"C:\Users\KING\.codex\.sandbox-bin\codex.exe"
 # letting a genuinely dead provider stall the whole health sweep.
 CODEX_TIMEOUT = 300
 
+# A local provider is a process on this host, not a link across the internet.
+# It has no network latency, so a miss is a cold start - a model loading, an
+# index opening - and not a slow route. 45s is enough for a local cold start
+# and short enough that a genuinely dead local provider is noticed.
+LOCAL_TIMEOUT = 45
+
 
 def _codex_call(p: Provider, prompt: str, timeout: int):
     """One real request to ChatGPT through the Codex CLI.
@@ -405,7 +405,9 @@ def call(p: Provider, prompt: str, max_tokens: int = 256, timeout: int = 120):
         st, body, err = _post(p.base_url + "/v1/messages", payload, headers, timeout)
         meta["http"] = st
         if st != 200:
-            meta["error"] = _err(body)
+            # The body may be absent (a timeout, a dropped connection). The
+            # transport error is then the only evidence of what happened.
+            meta["error"] = _err(body) or err or ("HTTP %s" % st)
             raise RuntimeError(meta["error"])
         text = "".join(c.get("text", "") for c in body.get("content", []))
         usage = body.get("usage", {})
@@ -434,7 +436,10 @@ def call(p: Provider, prompt: str, max_tokens: int = 256, timeout: int = 120):
             st, body, err = _post(p.base_url + "/chat/completions", payload, headers, timeout)
         meta["http"] = st
         if st != 200:
-            meta["error"] = _err(body)
+            # A timeout returns no body at all. Without the transport error
+            # the failure reads as the string "None", which is not a
+            # diagnosis.
+            meta["error"] = _err(body) or err or ("HTTP %s" % st)
             raise RuntimeError(meta["error"])
         try:
             if p.name == "openai":
@@ -496,6 +501,12 @@ def call(p: Provider, prompt: str, max_tokens: int = 256, timeout: int = 120):
 
 
 def _err(body) -> str:
+    if body is None:
+        # There is no body - the request never got one. The caller must fall
+        # back to the TRANSPORT error. Returning the string "None" here used
+        # to mask a socket timeout as an error literally reading "None",
+        # which reads as a provider defect when the truth is a slow hop.
+        return ""
     if isinstance(body, dict):
         e = body.get("error")
         if isinstance(e, dict):
@@ -529,6 +540,12 @@ def probe(p: Provider, timeout: int = 90) -> dict:
     # plain HTTP provider. A 90s timeout would call a working provider dead.
     if p.kind == "codex":
         timeout = max(timeout, CODEX_TIMEOUT)
+    # A LOCAL provider is not on the internet: it is a process on this host.
+    # It has no network latency, so if it misses the deadline the cause is a
+    # cold start (a model loading, an index opening), not a slow link. Give
+    # it room rather than declaring it dead.
+    if p.local:
+        timeout = max(timeout, LOCAL_TIMEOUT)
     try:
         text, meta = call(p, "Reply with exactly: ORCHESTRA OK", max_tokens=24, timeout=timeout)
         ok = "ORCHESTRA OK" in text
@@ -553,11 +570,43 @@ def probe(p: Provider, timeout: int = 90) -> dict:
         return out
     except Exception as e:
         msg = str(e)
-        out["status"] = classify(msg)
-        out["error"] = msg[:140]
+        # A single transport failure is not a verdict. The probe is retried
+        # once, and only a second failure counts - the same "two agreeing
+        # probes" rule the estate alerting uses. Without this a cold start
+        # demotes a working provider on the strength of one slow request.
+        if _is_transient(msg):
+            try:
+                text, meta = call(p, "Reply with exactly: ORCHESTRA OK",
+                                  max_tokens=24, timeout=timeout)
+                ok = "ORCHESTRA OK" in text
+                out["status"] = "healthy" if ok else "wrong-answer"
+                out["elapsed"] = meta.get("elapsed")
+                if not ok:
+                    out["error"] = "responded but did not match: %r" % text[:60]
+                else:
+                    out["error"] = None
+            except Exception as e2:
+                msg = str(e2)
+                out["status"] = classify(msg)
+                out["error"] = msg[:140]
+        else:
+            out["status"] = classify(msg)
+            out["error"] = msg[:140]
     # The provider answered, so this IS an observed state: remember it.
     _remember(p.name, out)
     return out
+
+
+# A transport-level failure, not a verdict from the provider itself.
+TRANSIENT = ("timed out", "timeout", "timedout", "connection reset",
+             "connection aborted", "connection refused", "remote end closed",
+             "incompleteread", "temporarily unavailable", "bad gateway",
+             "service unavailable", "gateway timeout", "eof occurred")
+
+
+def _is_transient(msg: str) -> bool:
+    m = (msg or "").lower()
+    return any(k in m for k in TRANSIENT)
 
 
 def _last_known(provider: str) -> dict | None:
