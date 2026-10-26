@@ -114,6 +114,32 @@ commit BEFORE touching a real repo.
 4. **Then expire the reflog and gc**, or the old commits stay in the object
    store: `git reflog expire --expire=now --all && git gc --prune=now`.
 
+**BUT do steps 2-4 AFTER the push, not before.** This is the single most
+expensive mistake in this whole procedure, and it cost a 40-minute stall on a
+1.28 GB repo.
+
+Git's push negotiation works by the CLIENT offering the server the commits
+it already has; the server's current tip is the common base. Steps 2-4 delete
+that base, so the client and the server end up with **no common ancestor** -
+and then the pack has to carry the ENTIRE repository instead of a small
+delta. On `dqikfox/QHYSICS` (1.28 GB of Unity textures and LFS assets) that
+turned a 2 MB publish into a 1.28 GB upload, and `git pack-objects` crawled
+for 40 minutes at 0% CPU before the run had to be killed.
+
+The order that works:
+
+    rewrite  ->  backup bundle  ->  PUSH  ->  delete refs/original  ->  gc
+
+The same push, with the base restored, took 1m49s and the server resolved
+3290 deltas from 69 local objects.
+
+If a push has already been run against a pruned clone, restore the base with a
+plain fetch and push again - the fetch is fast, because the server serves
+only what is missing:
+
+    git fetch origin "+refs/heads/<branch>:refs/remotes/origin/<branch>"
+    git push --force-with-lease=<branch>:<old-sha> origin <branch>:<branch>
+
 ## The push
 
 `--force-with-lease` needs a lease to compare against, and after step 1 the
@@ -122,6 +148,25 @@ remote-tracking ref is fresh, so it works. If it still fails with
 
     git ls-remote --heads origin main        # -> <sha>
     git push --force-with-lease=main:<sha> origin main:main
+
+**A push must never be able to hang, and never be able to ask a question.**
+
+- `GIT_TERMINAL_PROMPT=0` turns a credential prompt into an immediate
+  failure instead of an infinite wait. Git Credential Manager has an
+  interactive browser flow that will sit there for hours in a
+  non-interactive session.
+- `GIT_LFS_SKIP_PUSH=1` skips the `git-lfs` pre-push hook. **A commit-metadata
+  rewrite changes no LFS object**, so re-uploading them is pure waste - and
+  on a repo with 53 LFS pointers spread over 383 commits it was the thing
+  that stalled the publish.
+- Give the push a wall-clock timeout. A publish that has not finished in 30
+  minutes is not going to finish, and it must fail loudly.
+
+**A stalled push looks like a working one.** The symptom was `git.exe` at
+0.03s of CPU for 40 minutes with an ESTABLISHED connection to GitHub - it
+reads as "slow" but it was the pack builder grinding through 1.28 GB with no
+common ancestor. Check the remote ref before assuming a push is still
+working: if the SHA has not moved, nothing has landed.
 
 Push EVERY branch the remote has, not just the default one. A branch that
 exists on the remote but not locally fails with "src refspec does not match
