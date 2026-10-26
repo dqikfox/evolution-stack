@@ -65,6 +65,18 @@ vendored fast-export writer, on every repo including a trivial one, and
 reinstalling does not help. Core git's filter-branch has no Python dependency
 and works. A 69-commit repo rewrites in about 46 seconds.
 
+**Use the NATIVE git, always.** A bash shell resolves `git` to `/usr/bin/git`
+(MSYS, 2.53.0); the native one is `C:\Program Files\Git\cmd\git.exe`
+(2.55.0). The MSYS git resolves the repository from `$PWD`, gets an MSYS path,
+and fails with `fatal: not a git repository: '/c/Users/.../.git'`. The same
+command works from a native parent. So:
+
+    GIT = r"C:\Program Files\Git\cmd\git.exe"     # not "git"
+    subprocess.run([GIT, "filter-branch", ...], cwd=repo, env=env_without_PWD)
+
+Three things are needed together: the native git by absolute path, the cwd
+already inside the repo, and `PWD`/`OLDPWD` dropped from the environment.
+
 ## A SELECTIVE rewrite (the correct one)
 
 Rewrite only the local identities and leave the bots alone. The env-filter is
