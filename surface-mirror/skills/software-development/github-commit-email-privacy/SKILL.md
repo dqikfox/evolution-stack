@@ -123,9 +123,14 @@ remote-tracking ref is fresh, so it works. If it still fails with
     git ls-remote --heads origin main        # -> <sha>
     git push --force-with-lease=main:<sha> origin main:main
 
-Push EVERY branch the remote has, not just the default one - fetch each remote
-branch as a local branch first, or the push fails with "src refspec does not
-match any".
+Push EVERY branch the remote has, not just the default one. A branch that
+exists on the remote but not locally fails with "src refspec does not match
+any", so fetch each one into `refs/heads/` first:
+
+    git fetch origin "<branch>:refs/heads/<branch>"
+
+A repo with 173 remote branches needs all 173 fetched and pushed, not just
+the default branch.
 
 ## Three Windows-specific blockers
 
