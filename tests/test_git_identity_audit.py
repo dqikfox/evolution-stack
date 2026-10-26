@@ -23,6 +23,34 @@ mod = importlib.util.module_from_spec(spec)
 sys.modules["verify_all_branches"] = mod
 spec.loader.exec_module(mod)
 
+# The production path, captured BEFORE any fixture can redirect it.
+PRODUCTION_PROGRESS = mod.PROGRESS
+
+
+@pytest.fixture(autouse=True)
+def isolated_progress(tmp_path, monkeypatch):
+    """No test may write to the production progress file.
+
+    `main()` calls `save_progress`, which writes to `mod.PROGRESS`. A test
+    that calls `main()` with a fake repo would otherwise overwrite the real
+    audit's progress - the same class of pollution as a test writing to the
+    production provider ledger.
+    """
+    monkeypatch.setattr(mod, "PROGRESS", str(tmp_path / "branch_audit.json"))
+    yield
+
+
+def test_the_production_progress_file_is_in_the_state_directory():
+    """The guard on the guard: the real path must be the state directory.
+
+    The check reads the value captured at import, because the autouse
+    fixture redirects the live one for the duration of every test.
+    """
+    assert PRODUCTION_PROGRESS.endswith("branch_audit.json")
+    assert "state" in PRODUCTION_PROGRESS, \
+        "the production progress file must live in the state directory: %s" % PRODUCTION_PROGRESS
+    assert "scratch" not in PRODUCTION_PROGRESS
+
 
 # ------------------------------------------------------------------ the query
 

@@ -43,7 +43,9 @@ BAD = {
 ENV = dict(os.environ)
 ENV.pop("PYTHONPATH", None)
 
-PROGRESS = r"C:\Users\KING\AppData\Local\hermes\state\branch_audit.json"
+PROGRESS = os.environ.get(
+    "NEXUS_BRANCH_AUDIT_PROGRESS",
+    r"C:\Users\KING\AppData\Local\hermes\state\branch_audit.json")
 RATE_LIMIT_HINT = ("rate limit", "secondary rate", "abuse detection", "403")
 
 # The jq expression that turns each commit into "login|email|sha".
