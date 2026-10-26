@@ -58,7 +58,7 @@ NEXUS is the local knowledge base at `E:\ultron-memory\nexus-core\`. It exposes:
 - `GET /health` — DB notes count, Ollama models, Chroma vectors, Megatron memory
 - `POST /api/ask` — RAG with source citations
 
-**Status:** NEXUS CORE is live on port 8650 v3.3.0 with 2931 indexed notes. Megatron memory operational.
+**Status:** NEXUS CORE is live on port 8650. The indexed-note and vector counts change as notes are added — read `/health` for the live numbers instead of trusting a pinned figure. Megatron memory operational.
 
 ## Port Management Rules
 
@@ -73,7 +73,7 @@ THRONE uses a canonical port map at `E:\ultron-memory\infra\PORT_MAP.json`. Four
 | Port | Service | Status |
 |------|---------|--------|
 | 8650 | NEXUS CORE | Active |
-| 8666 | ULTRON 2.1 | Active (moved from 8650 2026-10-09) |
+| 8666 | ULTRON 2.1 | Retired — do not health-check it |
 | 8500 | KRYSYS shop | Active |
 | 8705 | TESSERACT | Active |
 | 8080 | llama-server (Heretik) | Expected |
@@ -340,6 +340,18 @@ those two files true rather than decorative.
   `UnboundLocalError` on the first line of work, and the process stays alive with
   the port closed — it reads as "present but not serving" forever.
 
+**Probing any service**
+- **Speak the scheme the service actually speaks.** A TLS service answers a plain
+  HTTP request with a 400 that says so, and reporting that as the service's health
+  is a false failure — the service is up and the probe was wrong. Discover the
+  scheme (one retry over TLS, certificate verification off on a private tailnet)
+  rather than assuming it.
+- **An open port with no answer is a third thing, not a failure.** A responding port
+  is not proof of health, a 400 is not proof of failure, and "port open, no HTTP
+  answer" is its own state — report it in those words.
+- **A timeout with the port still open is degraded, not offline.** A service that is
+  slow to answer is alive; paging the operator for it is the false failure.
+
 **Remote peers**
 - **Ask the peer about itself.** A peer's services are bound to its own loopback, so
   a probe from here sees a closed port for a perfectly healthy service. Probe over
@@ -364,6 +376,40 @@ those two files true rather than decorative.
   capture_output=True)` blocks forever on a call that already finished its work.
 - **Bound every search.** An unbounded recursive walk over a large tree pins CPU and
   can wedge the tool kernel; search a named root and cap the result count.
+
+### Launching a service that a customer can reach
+
+- **A launcher's job order is dependencies, then body-aware probe, then
+  leave/replace/refuse, then detached start.** Every launcher in this house
+  checks its tools before it touches the port, so a launcher missing a probe
+  cannot destroy a working service and only then report the missing file.
+- **A TCP connect is not a health check.** A port that accepts a connection
+  proves nothing: an SPA answers `/health` with its own shell, so a 200 there
+  is a file being served, not a service being ready. Probe the BODY of the
+  real route for a service marker, and point the registry at that route.
+- **cmd strips the quotes from an argument like `"ok":true`,** so the token
+  that reaches the program is not the token that was written. A probe marker
+  must be a bare word (`--contains krysys`).
+- **`cmd start /B` inherits every inheritable handle in the parent,** so a
+  service started that way dies with the caller's job object - a tool call
+  that starts a service leaves it dead seconds later. Spawn it with
+  `close_fds`, explicit log files, and `stdin=DEVNULL`.
+- **A service with no supervisor stays down until a human notices.** Run it
+  under a supervisor that restarts a crash and replaces a wedge, and prove
+  the recovery by killing the process and watching it come back.
+- **A launcher's idempotence is a property you must test, not assert.** Run
+  it twice: the second run must be a no-op, not a second copy.
+
+### Exposing a working local service to the public
+
+- **A Tailscale Funnel URL is a public HTTPS endpoint with no spend, no
+  deploy hook and no token.** It is the fastest route from a working local
+  service to a reachable one - use it before reaching for a hosting account.
+- **A client that hardcodes its API host breaks on every deployment that is
+  not that one.** The storefront must call `location.origin`, so it works
+  wherever it is served.
+- **Expose the service, then verify it from outside.** Fetch the real route
+  over the public URL and create a real checkout, not a dry run.
 
 See `references/peer-and-service-contracts.md` for the peer model's states,
 transports, and the estate-side implementation.

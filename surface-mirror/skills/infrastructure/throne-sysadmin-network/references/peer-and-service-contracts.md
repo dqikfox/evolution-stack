@@ -85,6 +85,33 @@ peer — probed, healed, and displayed like any other.
 A peer with no wake command is never woken. Stopping a peer and not being able to
 start it is a configuration gap to fix, not something to retry.
 
+## Telling the three failures apart
+
+A remote port that does not answer is a SYMPTOM. Three different faults produce
+it, and they need different responses:
+
+| Symptom | What it is | Decisive test |
+|---|---|---|
+| every port on the peer times out, SSH included | the host is off or asleep | ping and `Get-NetTCPConnection` over ssh once it is back |
+| SSH works, the peer's own health endpoint refuses | the SERVICE is dead | ask the peer about itself over ssh — it answers with its own error |
+| the peer's own health answers, the path from here does not | the path or the firewall is blocking | compare the peer's loopback answer with the answer from here |
+
+Ask the peer about itself FIRST. One ssh call splits "the service is dead" from
+"the path is broken", and the second case is the one that gets misreported: a
+timed-out request is routinely written up as a blocked network when the service
+was simply not running.
+
+## Probing a service
+
+- **Speak the scheme the service actually speaks.** A TLS service answers a plain
+  HTTP request with a 400 that says so. Retry over TLS (certificate verification
+  off on a private tailnet) instead of reporting the 400 as the service's health.
+- **An open port with no answer is its own state.** Report "port open, no HTTP
+  answer" — not `HTTP 0`, which reads as a failure the operator must chase. A
+  service speaking TLS on a name-bound certificate looks exactly like this when it
+  is probed by IP.
+- **A timeout with the port still open is degraded, not offline.**
+
 ## Verifying the whole chain
 
 1. `python -m evo.peers` — the peer survey, one line per peer service.

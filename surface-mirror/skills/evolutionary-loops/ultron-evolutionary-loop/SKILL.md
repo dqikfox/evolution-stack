@@ -355,3 +355,27 @@ defects found and the fixes, is in
   next?" every cycle is doing the agent's job. Spend a question only on a decision
   that is genuinely the operator's — a spend, a deletion, a credential, a
   third-party account — and batch everything else into the turn and ship it.
+
+### When the work is a shop that takes money
+
+- **A quote and a charge must be the same function.** Two copies of the price
+  arithmetic drift, and the drift is invisible until a customer is quoted one
+  number and charged another. One builder produces the line items, the
+  subtotal, the shipping and the total; every route calls it.
+- **A static handler mounted over a project root publishes the project's
+  private data, not just its assets.** The order store, the server source
+  and the wholesale cost basis are all fetchable by path. Deny them
+  explicitly, and prove it by fetching the path and reading the body.
+- **A webhook handler that falls back to an unsigned body when the signing
+  secret is missing is a free-goods button.** Fail closed with a 503. A
+  default secret in source is worse than no secret, because it lives in the
+  repository's history.
+- **Credentials hardcoded in source are compromised the moment they are
+  committed.** Remove the fallback, require the environment, and rotate the
+  exposed value - the commit history keeps the old one.
+- **Verify the whole path a customer walks, over the public URL, with a real
+  checkout session** - not a dry run and not a local probe. A dry run proves
+  the arithmetic; only a real session proves the money path.
+- **A checkout session created for a test is an order in the live store.**
+  Identify it precisely and remove it, so the pre-existing real orders stay
+  the record of what actually happened.
