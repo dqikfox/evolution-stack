@@ -98,3 +98,15 @@ is in the house suite - break the rotation and the gate must drop.
 The mirror's contract is the improvable surface only (`hermes/skills` +
 `hermes/scripts`). The router and this skill are mirrored; `evo/bench.py` and
 the tests live in the stack repo and are version-controlled there.
+
+## The dashboard panel
+
+TESSERACT shows the rotation on the NETWORK tab, under MODEL PROVIDERS. It
+reads `E:/ultron-memory/evolution-stack/state/providers.json`, which the
+estate's gate publishes - the panel never probes a provider itself, because
+a live probe of five providers is five round-trips plus a model load on the
+local GPU.
+
+A provider that is BLOCKED is painted gold, never red, and carries both the
+reason and the line that says how to unblock it. A blocked provider is not a
+fault in the estate.

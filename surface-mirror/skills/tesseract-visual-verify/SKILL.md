@@ -69,3 +69,18 @@ Spec says ≥197 tests passing; current baseline is 339 passed + 1 skipped.
 ```bash
 .venv/Scripts/python.exe -m pytest -q
 ```
+
+- **Run the TESSERACT suite with the ABSOLUTE venv path**, not `.venv/Scripts/python.exe`.
+  A relative path resolves to `C:\Users\KING\.venv` under MSYS, which has no
+  `fastapi`, and the whole suite errors at collection with 21 import errors.
+  The project venv is `C:\Users\KING\Projects\TESSERACT\.venv\Scripts\python.exe`.
+  The suite is 339 passed + 1 skipped.
+- **A panel can render correctly and still be on a hidden tab.** The MODEL
+  PROVIDERS panel lives in `tab-network`; a screenshot attempt times out with
+  "element is not visible" until the tab is opened. Open it with
+  `page.evaluate("showTab('network')")` rather than clicking a label - the
+  labels are also used for other navigation and a click can land wrong.
+- **Measure overflow, do not eyeball it.** `scrollWidth > clientWidth` on every
+  descendant of the panel catches text that runs past a card edge; a
+  screenshot at dashboard scale can hide it. `scripts/check_provider_overflow.py`
+  in the TESSERACT repo does this.
