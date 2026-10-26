@@ -85,6 +85,23 @@ op --version
 
 3. Choose an auth method above and configure it.
 
+## `op item create` on this build needs `--title`
+
+op 2.30.3 here treats a POSITIONAL argument as a field assignment, not as the title. `op item create "My Item"` fails with `cannot add a field with no value My Item`, and so does every variant of the JSON template - the error names whatever it thinks is a field, which makes it look like a template problem when it is an argument-parsing problem.
+
+```bash
+op item create --title "My Item" --category "API Credential" --vault credentials \
+  credential="$THE_VALUE" "notesPlain=$THE_NOTE"
+```
+
+A JSON template file also works as a positional, but ONLY with `--title` given separately - and the template's own `category` key makes op build a default field set it then cannot fill, so the category belongs on the flag and the template should carry only `title` and `fields`.
+
+**Read a secret from its file at call time, never type it:** `KEY=$(grep -oE 'OPENAI_API_KEY=.*' "$FILE" | cut -d= -f2-)` then `credential="$KEY"`. The value never appears in the command you write or in a shell history.
+
+**`op item get` does not reveal a concealed field.** Add `--reveal`, or the credential reads back as empty and you will think the write failed when it landed.
+
+**Do not destroy the old credential while adding a new one.** A new project key goes in a NEW item with its own title, scope and verdict in the note; the old item stays untouched until the user says otherwise.
+
 ## Hermes Execution Pattern (desktop app flow)
 
 Hermes terminal commands are non-interactive by default and can lose auth context between calls.
