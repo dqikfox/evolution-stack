@@ -69,6 +69,9 @@ GATEWAY_PORT = 18789
 # deleted, so the check was chasing a ghost).
 SERVICES_REGISTRY = Path(r"E:\ultron-memory\infra\SERVICES.json")
 PORT_MAP = Path(r"E:\ultron-memory\infra\PORT_MAP.json")
+# A remote peer registry: the machines on the tailnet that run their own
+# Hermes. They are part of the estate, so they are probeable and healable.
+PEER_REGISTRY = Path(r"E:\ultron-memory\infra\REMOTE_AGENTS.json")
 
 OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "starscream-64k"

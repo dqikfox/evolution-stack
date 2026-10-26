@@ -756,63 +756,67 @@ def scan_once() -> dict:
 
 def serve_http(port: int = 8660):
 
-    """Tiny HTTP server exposing inventory + markdown."""
+    """Tiny HTTP server exposing inventory + markdown.
+
+    The handler class is defined BEFORE the server is bound. The order
+    matters and is not cosmetic: the class is a local of this function,
+    so binding the server first means the name is not yet bound when
+    the constructor reads it, and the service dies on the first line of
+    work with an UnboundLocalError. It fails silently as far as the
+    caller is concerned - the process is alive, the port is closed -
+    which is why this service could read as "present but not serving"
+    for as long as it did.
+
+    The bind address is 127.0.0.1, not the empty string. The empty
+    string means every interface, which would publish the machine's
+    network inventory to the tailnet; the health contract is local.
+    """
 
     import http.server
 
     import socketserver
 
-
-
     class H(http.server.BaseHTTPRequestHandler):
 
         def log_message(self, *a, **k): pass
 
-
+        def _send(self, content_type: str, body: bytes) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            try:
+                self.wfile.write(body)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
+                print(f"[throne_discovery] Client aborted connection during write: {e}")
+            except OSError as e:
+                print(f"[throne_discovery] OS error during write: {e}")
 
         def do_GET(self):
             if self.path in ("/", "/index.json"):
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
                 body = INV_JSON.read_bytes() if INV_JSON.exists() else b"{}"
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                try:
-                    self.wfile.write(int_to_bytes(body)) # wait, body is bytes already? Let's check original code... it was 'body = ...b"{}"'. 
-                    # Actually the error in my previous scratchpad thought was about int_to_bytes vs raw byte writing.
-                    # The ORIGINAL code used self.wfile.write(body) and body was from read_bytes(). Correcting back to simple write.
-                    self.wfile.write(body)
-                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
-                    print(f"[throne_discovery] Client aborted connection during write: {e}")
-                except OSError as e:
-                    print(f"[throne_discovery] OS error during write: {e}")
+                self._send("application/json", body)
             elif self.path == "/inventory.md":
-                self.send_response(200)
-                self.send_header("Content-Type", "text/markdown")
                 body = INV_MD.read_bytes() if INV_MD.exists() else b""
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                try:
-                    self.wfile.write(body)
-                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
-                    print(f"[throne_discovery] Client aborted connection during write: {e}")
-                except OSError as e:
-                    print(f"[throne_discovery] OS error during write: {e}")
+                self._send("text/markdown", body)
             elif self.path.startswith("/rescan"):
-                inv = scan_once()
-                body = json.dumps(inv).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                try:
-                    self.wfile.write(body)
-                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
-                    print(f"[throne_discovery] Client aborted connection during write: {e}")
-                except OSError as e:
-                    print(f"[throne_discovery] OS error during write: {e}")
+                body = json.dumps(scan_once()).encode()
+                self._send("application/json", body)
             else:
                 self.send_response(404); self.end_headers()
+
+    class Server(socketserver.TCPServer):
+        # A restart must not fail with "address already in use" because
+        # the previous generation is still in TIME_WAIT.
+        allow_reuse_address = True
+
+    with Server(("127.0.0.1", port), H) as httpd:
+        print(f"[discovery] Serving HTTP on 127.0.0.1:{port}/ (press CTRL+C to quit)", flush=True)
+        httpd.serve_forever()
+
+import threading
+
+
 def main() -> int:
 
     ap = argparse.ArgumentParser()
@@ -831,9 +835,24 @@ def main() -> int:
 
     if args.http:
 
-        # initial scan, then serve
+        # SERVE FIRST, SCAN IN THE BACKGROUND.
 
-        scan_once()
+        # A health endpoint must not block on heavyweight work, and a LAN
+        # scan over every responder on the network is heavyweight - it
+        # takes longer than any reasonable health-check timeout. When the
+        # scan ran first, the port stayed closed for the whole scan, the
+        # launcher timed out, and the service was declared unstartable
+        # even though it was working. The endpoint now answers at once
+        # and the inventory fills in behind it; /rescan forces a fresh
+        # scan on demand.
+
+        def _background_scan() -> None:
+            try:
+                scan_once()
+            except Exception as exc:
+                print(f"[discovery] initial scan error: {exc}", file=sys.stderr, flush=True)
+
+        threading.Thread(target=_background_scan, daemon=True).start()
 
         serve_http(args.http_port)
 

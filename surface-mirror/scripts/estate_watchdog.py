@@ -36,6 +36,12 @@ import urllib.request
 from pathlib import Path
 
 REGISTRY = Path(r"E:\ultron-memory\infra\SERVICES.json")
+# The remote peers, and the code that knows their rules. The peer survey
+# lives in the evolution stack because that is where the peer model
+# lives; the watchdog calls it rather than keeping a second copy of the
+# rules, because a second copy drifts.
+PEER_REGISTRY = Path(r"E:\ultron-memory\infra\REMOTE_AGENTS.json")
+EVOLUTION = Path(r"E:\ultron-memory\evolution-stack")
 LOG = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "hermes" / "logs" / "estate_watchdog.log"
 PROBE_TIMEOUT = 6
 # The launcher waits up to 180s for the service's health endpoint before it
@@ -95,12 +101,14 @@ def heal(service: dict) -> bool:
     """Restart through the documented launcher. Never improvise a start path."""
     start = service.get("start") or {}
     path = start.get("path")
+    args = start.get("args", "")
     if not path or not Path(path).exists():
         log(f"  {service.get('name')}: no usable start path ({path})")
         return False
-    log(f"  {service.get('name')}: restarting via {path}")
+    command = f"{path} {args}".strip()
+    log(f"  {service.get('name')}: restarting via {command}")
     try:
-        result = subprocess.run(["cmd.exe", "/c", path], capture_output=True,
+        result = subprocess.run(["cmd.exe", "/c", command], capture_output=True,
                                 text=True, timeout=LAUNCHER_BUDGET,
                                 encoding="utf-8", errors="replace")
     except Exception as exc:
@@ -117,6 +125,52 @@ def heal(service: dict) -> bool:
     for line in (result.stdout or "").strip().splitlines()[-4:]:
         log(f"    {line}")
     return False
+
+
+def check_peers() -> tuple[list, list]:
+    """Probe the remote peers, and heal what the peers can heal.
+
+    A peer that is UNREACHABLE is reported and not failed: the machine
+    is away, nobody can start its service, and a watchdog that fails for
+    that is a watchdog whose exit code means nothing. A peer that is
+    reachable and whose service is down CAN be healed, because the far
+    side has its own start path - and that is a failure if the heal
+    does not work.
+    """
+    healed, failed = [], []
+    if not PEER_REGISTRY.exists():
+        return healed, failed
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "evo.peers", "--heal"],
+            cwd=str(EVOLUTION), capture_output=True, text=True, timeout=HEAL_WAIT + 60,
+            encoding="utf-8", errors="replace")
+    except Exception as exc:
+        log(f"  peers: the peer survey could not run: {exc}")
+        return healed, failed
+    try:
+        rows = json.loads(result.stdout or "[]")
+    except ValueError:
+        log(f"  peers: the peer survey did not answer with a result "
+            f"(rc={result.returncode})")
+        for line in (result.stderr or "").strip().splitlines()[-3:]:
+            log(f"    {line}")
+        return healed, failed
+    for row in rows:
+        name = row.get("name", "?")
+        state = row.get("status", "?")
+        if state == "up":
+            continue
+        if state == "unreachable":
+            log(f"  {name}: the peer is unreachable - reported, not healed")
+            continue
+        log(f"  {name} (:{row.get('port')}) is DOWN on the peer")
+        if row.get("healed"):
+            log(f"  {name}: {row['healed']}")
+            healed.append(name)
+        else:
+            failed.append(name)
+    return healed, failed
 
 
 def main() -> int:
@@ -147,10 +201,15 @@ def main() -> int:
             continue
         log(f"  {name} (:{service.get('port')}) is DOWN")
         (healed if heal(service) else failed).append(name)
+    peers_healed, peers_failed = check_peers()
+    if peers_healed:
+        log(f"peers healed: {peers_healed}")
+    if peers_failed:
+        log(f"peers STILL DOWN: {peers_failed}")
     if healed:
         log(f"healed: {healed}")
-    if failed:
-        log(f"STILL DOWN: {failed}")
+    if failed or peers_failed:
+        log(f"STILL DOWN: {failed + peers_failed}")
         return 1
     log("estate is healthy")
     return 0

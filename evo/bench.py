@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import paths, services
+from . import paths, peers, services
 
 
 @dataclass
@@ -124,6 +124,36 @@ def check_services() -> list[Check]:
         detail=f":{paths.GATEWAY_PORT} {'up' if gw else 'DOWN'}",
         elapsed=time.time() - t0,
     ))
+    return out
+
+
+def check_peers() -> list[Check]:
+    """Remote peers are part of the estate.
+
+    The distinction that matters is the same one the local check makes:
+    a service with a documented start path is GATE-ACTIONABLE, and one
+    without is operator-level. A peer service whose peer is reachable
+    and whose service is down can be healed (the far side has a start
+    path), so it counts against the gate. A peer that is UNREACHABLE
+    cannot be healed by anyone - the machine is simply away - so it is
+    reported and it lands on the host score, not the gate. A gate that
+    fails for a machine that is switched off is a gate that cries wolf.
+    """
+    out: list[Check] = []
+    for row in peers.survey():
+        up = row["status"] == "up"
+        if row["status"] == "unreachable":
+            passed, scored, detail = True, False, row["detail"]
+        else:
+            gate = up or row["healable"]
+            passed, scored = up, gate
+            detail = f":{row['port']} {row['status']} on {row['ip']}"
+            if not up:
+                detail += " — healable on the peer" if row["healable"] else " — operator-level"
+        out.append(Check(
+            name=f"peer:{row['name']}", group="peers", weight=2.0, passed=passed,
+            detail=detail, elapsed=row.get("elapsed", 0.0), scored=scored,
+        ))
     return out
 
 
@@ -448,7 +478,7 @@ def check_no_published_secrets() -> list[Check]:
 def run() -> Scorecard:
     checks: list[Check] = []
     for fn in (
-        check_services, check_nexus_api, check_ollama_api, check_skills,
+        check_services, check_peers, check_nexus_api, check_ollama_api, check_skills,
         check_scripts_compile, check_cron, check_config, check_memory,
         check_repos, check_scout, check_learning, check_stack_self,
         check_no_published_secrets,
