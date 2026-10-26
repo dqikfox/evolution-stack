@@ -89,6 +89,32 @@ A 25.8B Q4_K_M with `--ctx 65536` and q8_0 KV cache lands around **20–22 GB** 
 - **Setting `OLLAMA_KEEP_ALIVE=-1` (unload immediately)** is rarely what you want; the model unloads after every single request. If you actually want to free VRAM, stop `ollama serve` instead.
 - **Service-mode installs ignore HKCU env entirely.** If `Get-WmiObject` shows owner `SYSTEM` or `LOCAL SERVICE`, you need to write to the service's `Environment` registry value (`HKLM\SYSTEM\CurrentControlSet\Services\Ollama`) and restart the service. That HKLM write needs elevation — see `infrastructure/windows-shell-automation` § "Hermes `terminal()` shell is not elevated".
 
+## When the local GPU is the ceiling
+
+Measure before you spend. Two numbers decide whether more money or better
+scheduling is the answer:
+
+```bash
+nvidia-smi --query-gpu=memory.total,memory.used,utilization.gpu --format=csv
+```
+
+- **High committed VRAM, low utilisation** — capacity is committed but idle (a
+  long-context model parked in VRAM between requests). The lever is scheduling
+  and quantisation, not another card: unload models you are not using, drop
+  `num_ctx` for interactive work, keep exactly one model resident.
+- **VRAM is at the card's limit and the model class you need does not fit** —
+  now money is the lever. A 70B-class model at a 64K context needs 40-80 GB,
+  which no 24 GB card holds. Rent that capacity for the burst and stop it when
+  the work is done: a node that is switched off when idle is a PEER, not a
+  fleet. See `infrastructure/throne-sysadmin-network` § "Service and Peer
+  Contracts" for the peer model and the wake command that starts a rented node
+  only when the work needs it.
+- **A fleet of hosted notebooks is not capacity you can use.** Notebook runtimes
+  are ephemeral, hold no state, carry no secrets, and end on their own, so they
+  cannot be a service, a cron target, or a dependency. They earn their keep in
+  exactly two places: a sandbox for code you do not trust to run on your own
+  machine, and shareable reproducible demos.
+
 ## Reference
 
 - Ollama env-var documentation: https://github.com/ollama/ollama/blob/main/docs/faq.md

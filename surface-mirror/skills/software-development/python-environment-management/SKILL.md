@@ -34,6 +34,14 @@ Use this skill when a project lacks standard dependency manifests (e.g., `requir
 - **Renaming a brand or persona across the repo requires six sweeps, not one.** File names, JSON content, docstring, generator constants, hardcoded HTML in the server template, and rendered artifacts (SVG portraits, JSONL SFT) are independent. A `grep -rn` catches the first four; the rendered artifacts only update when the generator runs again. Sequence: (1) rename files, (2) update JSON `name` fields, (3) update generator constants + phrase-level swaps, (4) re-run generator to overwrite artifacts, (5) update HTML templates, (6) commit + push + verify the live page shows the new name. Skipping (4) leaves the public-facing artifacts stale.
 - **Filenames with hyphens cannot be imported as Python modules.** `python -m shop-bot` exits 1 with `No module named 'shop_bot'` because Python module identifiers must match `[A-Za-z_][A-Za-z0-9_]*`. A file named `shop-bot.py` is not importable — only its sibling with underscores (`shop_bot.py`) works. When you find yourself writing `import shop_bot` in launcher code, verify the source file uses underscores (not hyphens). Symptom: `cd <dir> && python -m <hyphen-name>` fails even though the file sits in the cwd. The cwd-on-sys.path behavior plus the invalid identifier is the giveaway. Copy or rename to the underscored form before any `import` statement.
 
+- **A namespace package loses to a regular package of the same name anywhere on
+  `sys.path`.** A directory without `__init__.py` is only a namespace portion, and
+  any regular package of the same name found elsewhere on the path wins —
+  regardless of which one comes first. Symptom: `ModuleNotFoundError` naming the
+  SUBMODULE (`No module named 'tools.history_secret_sweep'`) while `import tools`
+  itself works fine; the imported `tools` was simply the wrong one. Fix: give the
+  directory an `__init__.py` so it is a regular package found first on the path.
+
 ## References
 - references/dependency_discovery_via_import_scan.md: Notes on using regex/import scanning to rebuild missing manifests.
 - references/pythonpath-leakage-fix.md: Runtime sys.path cleanup when subprocess inheritance can't be avoided.
