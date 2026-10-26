@@ -32,7 +32,7 @@ records what each provider actually did.
 | xai | grok-3 | api.x.ai | working, ~3s |
 | nexus | kimi-k2.6:cloud | 127.0.0.1:8650/v1 | working, local, free |
 | ollama-cloud | minimax-m3.1-flash | ollama.com/v1 | working, ~1.3s |
-| ollama-local | starscream:latest | 127.0.0.1:11434 | working, free, 64K |
+| ollama-local | starscream-64k:latest | 127.0.0.1:11434 | working, free, 64K |
 | openai | gpt-5.5 | api.openai.com | BLOCKED - no credits |
 | copilot | gpt-4o | api.githubcopilot.com | BLOCKED - not licensed |
 | openrouter | claude-opus-4.8 | openrouter.ai | BLOCKED - no key exists |
@@ -172,6 +172,28 @@ Point the local provider at the tag that is actually resident. It is also the on
   request after a restart will report it dead.
 - **A key that cannot pay is BLOCKED, not FAILED.** Keep it out of the
   rotation; do not retry it on every call.
+- **A provider at CAPACITY is BLOCKED too, and the word "model" is not a
+  verdict.** "The model is currently at capacity due to high demand. Please
+  try again in a few minutes, or use a higher service tier" is the provider
+  saying it will not serve right now. It used to be classified `nomodel`,
+  because the classifier matched the bare word "model" in the sentence - so a
+  busy provider read as a provider whose model was gone, the rotation went
+  looking for a model that was there all along, and the routing proof failed
+  an integration that was working. Two rules follow. A capacity refusal is a
+  CURRENT CONDITION on a valid credential, exactly like a plan cap, so it is
+  blocked. And only the phrasings that mean the model is NOT there count:
+  `not found`, `404`, `model_not_found`, `unknown model`, `no such model`,
+  `model is not supported`, `does not exist`. Any sentence about a model
+  contains the word.
+- **A capacity refusal is transient, so it is retried once.** The provider
+  said it will not serve right now; a moment later it often will. Without
+  the retry, one busy minute demotes a working provider on the strength of a
+  single request - the same rule as a cold start.
+- **A proof must SKIP on a current condition, with the reason recorded.** A
+  plan cap skips; a capacity refusal skips; a WRONG ANSWER and a DEAD
+  TRANSPORT fail. A test that cannot tell the difference reports a broken
+  integration every time a provider is busy, and a test that is trusted too
+  much stops being trusted at all.
 - **A vault outage must not change a provider's verdict.** "The credential
   does not exist" and "the vault would not answer" are different facts. If
   the vault read swallows its errors and returns nothing, a 30-second 1Password
@@ -227,9 +249,10 @@ never to the rotation.
 
     pytest E:/ultron-memory/evolution-stack/tests/test_provider_router.py -q
 
-29 tests, isolated local HTTP server, no live provider and no real key. They
+31 tests, isolated local HTTP server, no live provider and no real key. They
 cover the vault contract, the placeholder rule, the last-known record and
-its isolation from the production state.
+its isolation from the production state, and the capacity rule - a busy
+provider must be blocked, not read as a missing model.
 
     pytest E:/ultron-memory/evolution-stack/tests/test_provider_routing_proof.py -q
 
