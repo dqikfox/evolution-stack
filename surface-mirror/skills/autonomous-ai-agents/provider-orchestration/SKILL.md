@@ -37,6 +37,33 @@ records what each provider actually did.
 | copilot | gpt-4o | api.githubcopilot.com | BLOCKED - not licensed |
 | openrouter | claude-opus-4.8 | openrouter.ai | BLOCKED - no key exists |
 
+## Proving the rotation (do it this way)
+
+A proof whose PROMPT CONTAINS the expected answer proves nothing - the model
+echoes it back from the prompt. A delegation batch whose goals said "Reply
+with exactly: CLAUDE SAYS HELLO" passed 3/3 while every child ran on the
+same inherited parent model; the delegation manifest showed `provider: null,
+model: null`. That was not evidence of a rotation.
+
+The real proof, and it is a permanent test
+(`tests/test_provider_routing_proof.py` in the evolution stack):
+
+1. The caller generates a **fresh random nonce** per provider. It is not in
+   any prompt the caller pre-wrote, and it differs for every provider.
+2. **Pin** one provider per call, so exactly one provider is eligible.
+3. Require the response to contain **that provider's** nonce.
+4. Require the **served** provider to equal the **pinned** one, and that a
+   pinned call never falls through (`attempts` must be empty).
+5. Require the **token counts to differ** between providers. That is the
+   signature of genuinely different models: Anthropic answered in 23 tokens,
+   the local 3090 in 6,796, xAI in 207.
+
+    provider_router.py chat "Reply with exactly this token: RZHMHFHT" \
+        --provider xai --json
+
+Then check the ledger: `provider_router.py stats`. Each call is recorded
+against its own provider with its own latency, tokens and cost.
+
 ## The rules that earned their place
 
 - **A provider is healthy only if a real request returned the expected
