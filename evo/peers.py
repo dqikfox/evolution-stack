@@ -63,6 +63,13 @@ class Peer:
     key: str
     services: list[PeerService] = field(default_factory=list)
     notes: str = ""
+    # How to bring the peer INTO EXISTENCE, for a peer that is not a
+    # machine on the desk but a rented node that is stopped when it is
+    # idle. The command runs HERE, on THRONE, because the thing that
+    # starts a rented node is the provider's own control plane, and the
+    # provider does not know how to start itself.
+    wake: list[str] = field(default_factory=list)
+    wake_timeout: int = 180
 
     @property
     def healable(self) -> bool:
@@ -92,6 +99,9 @@ def load() -> list[Peer]:
                 critical=bool(svc.get("critical", False)),
                 notes=svc.get("notes", ""),
             ))
+        wake = host.get("wake") or []
+        if isinstance(wake, str):
+            wake = [wake]
         peers.append(Peer(
             name=name,
             ip=host.get("ip", ""),
@@ -99,6 +109,8 @@ def load() -> list[Peer]:
             key=host.get("key", ""),
             services=services,
             notes=host.get("notes", ""),
+            wake=list(wake),
+            wake_timeout=int(host.get("wake_timeout", 180)),
         ))
     return peers
 
@@ -142,6 +154,41 @@ def reachable(peer: Peer, timeout: int = 20) -> tuple[bool, str]:
     if "timed out" in detail or "Connection refused" in detail or "No route" in detail:
         return False, "the peer is unreachable"
     return False, detail[:140] or "no answer"
+
+
+def wake_peer(peer: Peer) -> tuple[bool, str]:
+    """Bring a stopped peer into existence, if it knows how.
+
+    A rented node is a peer that is switched off when it is idle, and
+    that is the whole point: you pay for the GPU only while the work
+    is happening. The wake command runs here, on THRONE, because the
+    provider's control plane is what starts it - and a peer that is
+    simply switched off cannot run its own wake command.
+    """
+    if not peer.wake:
+        return False, "the peer has no wake command"
+    try:
+        result = subprocess.run(peer.wake, capture_output=True, text=True,
+                                timeout=peer.wake_timeout, encoding="utf-8", errors="replace")
+    except subprocess.TimeoutExpired:
+        return False, "the wake command did not finish in %ds" % peer.wake_timeout
+    except FileNotFoundError as exc:
+        return False, "the wake command is not installed: %s" % exc
+    out = (result.stdout or "").strip()
+    if result.returncode != 0:
+        return False, ((result.stderr or out or "the wake command failed").strip()[:140])
+    return True, (out[:140] or "waking")
+
+
+def wait_for_peer(peer: Peer, timeout: int = 240) -> tuple[bool, str]:
+    """Wait for a woken peer to answer on the tailnet."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ok, why = reachable(peer, timeout=15)
+        if ok:
+            return True, "the peer answered"
+        time.sleep(10)
+    return False, "the peer did not answer within %ds" % timeout
 
 
 def probe(peer: Peer, service: PeerService, timeout: int = 45) -> tuple[str, str]:
@@ -219,6 +266,16 @@ def survey(auto_heal: bool = False) -> list[dict]:
     for peer in load():
         t_peer = time.time()
         peer_up, peer_detail = reachable(peer)
+        if not peer_up and auto_heal and peer.wake:
+            # A peer that is stopped and knows how to be woken is not a
+            # failure - it is a peer that is not being paid for right
+            # now. Waking it is the heal.
+            good, message = wake_peer(peer)
+            if good:
+                peer_detail = "waking: " + message
+                peer_up, wake_detail = wait_for_peer(peer)
+                if not peer_up:
+                    peer_detail = "woken, but " + wake_detail
         peer_cost = time.time() - t_peer
         for service in peer.services:
             t0 = time.time() - peer_cost
@@ -249,6 +306,49 @@ def survey(auto_heal: bool = False) -> list[dict]:
     return out
 
 
+def write_state(rows: list[dict] | None = None) -> str:
+    """Publish the peer state where another system can read it.
+
+    The state lives under the evolution stack's own directory because
+    the evolution stack is its writer: a file read by a gate must live
+    under a directory owned by whoever writes it, not in another
+    system's pruning domain.
+
+    The file carries its own age. A reader that shows a peer state from
+    an hour ago as if it were current is worse than a reader that shows
+    nothing, so the age travels with the data.
+    """
+    rows = survey() if rows is None else rows
+    payload = {
+        "generated_at": time.time(),
+        "generated_at_iso": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "peers": rows,
+    }
+    state_dir = paths.STACK / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    target = state_dir / "peers.json"
+    # written atomically: a reader must never see a half-written file
+    tmp = target.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp.replace(target)
+    return str(target)
+
+
+def read_state() -> dict:
+    """Read the published peer state, with its age."""
+    target = paths.STACK / "state" / "peers.json"
+    if not target.exists():
+        return {"generated_at": 0, "peers": [], "stale": True}
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"generated_at": 0, "peers": [], "stale": True}
+    age = time.time() - float(data.get("generated_at") or 0)
+    data["age_seconds"] = round(age, 1)
+    data["stale"] = age > 900  # older than a quarter of an hour is history, not state
+    return data
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -256,9 +356,13 @@ if __name__ == "__main__":
     ap.add_argument("--heal", action="store_true",
                     help="start a peer's own start task when its service is down")
     ap.add_argument("--compact", action="store_true", help="one line per peer service")
+    ap.add_argument("--no-state", action="store_true",
+                    help="do not publish the peer state file")
     args = ap.parse_args()
 
     rows = survey(auto_heal=args.heal)
+    if not args.no_state:
+        write_state(rows)
     if args.compact:
         for row in rows:
             print(f"{row['status']:<12} {row['name']:<24} {row['detail'][:80]}")

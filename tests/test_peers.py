@@ -196,6 +196,81 @@ def test_survey_heals_a_down_service_on_a_reachable_peer(registry, monkeypatch):
     assert ollama["healable"] is False
 
 
+# --- the wake: a rented peer that is stopped when it is idle ---------------
+
+def test_load_reads_a_wake_command(registry):
+    data = json.loads(registry.read_text(encoding="utf-8"))
+    data["shadow"]["wake"] = ["providerctl", "start", "shadow"]
+    data["shadow"]["wake_timeout"] = 120
+    registry.write_text(json.dumps(data), encoding="utf-8")
+    peer = _peer(registry)
+    assert peer.wake == ["providerctl", "start", "shadow"]
+    assert peer.wake_timeout == 120
+
+
+def test_wake_peer_runs_the_command(registry, monkeypatch):
+    peer = _peer(registry)
+    peer.wake = ["wake-now"]
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        class R:
+            returncode = 0
+            stdout = "pod started"
+            stderr = ""
+        return R()
+
+    monkeypatch.setattr(peers.subprocess, "run", fake_run)
+    ok, message = peers.wake_peer(peer)
+    assert ok
+    assert calls == [["wake-now"]]
+    assert "pod started" in message
+
+
+def test_wake_peer_without_a_command_says_so(registry):
+    peer = _peer(registry)
+    ok, message = peers.wake_peer(peer)
+    assert not ok
+    assert "no wake command" in message
+
+
+def test_survey_wakes_a_stopped_peer_that_knows_how(registry, monkeypatch):
+    """A rented node that is switched off is not a failure. It is a node
+    that is not being paid for right now - and the heal is to start it."""
+    # The wake command has to be in the REGISTRY: survey() loads its own
+    # peer objects, so a wake command set on an in-memory peer is not
+    # the one the survey will see.
+    data = json.loads(registry.read_text(encoding="utf-8"))
+    data["shadow"]["wake"] = ["wake-now"]
+    registry.write_text(json.dumps(data), encoding="utf-8")
+    woken = []
+
+    def fake_wake(p):
+        woken.append(p.name)
+        return True, "pod started"
+
+    def fake_wait(p, timeout=240):
+        return True, "the peer answered"
+
+    monkeypatch.setattr(peers, "probe", lambda *a, **k: ("up", "HTTP 200"))
+    monkeypatch.setattr(peers, "wake_peer", fake_wake)
+    monkeypatch.setattr(peers, "wait_for_peer", fake_wait)
+    monkeypatch.setattr(peers, "reachable", lambda *a, **k: (False, "the peer is unreachable"))
+
+    rows = peers.survey(auto_heal=True)
+    assert woken == ["shadow"]
+    assert all(r["status"] == "up" for r in rows)
+
+
+def test_survey_does_not_wake_a_peer_with_no_wake_command(registry, monkeypatch):
+    peer = _peer(registry)
+    monkeypatch.setattr(peers, "reachable", lambda *a, **k: (False, "the peer is unreachable"))
+    monkeypatch.setattr(peers, "wake_peer", lambda *a, **k: pytest.fail("a peer with no wake command must not be woken"))
+    rows = peers.survey(auto_heal=True)
+    assert all(r["status"] == "unreachable" for r in rows)
+
+
 def test_survey_rows_have_the_same_shape_as_a_local_survey(registry, monkeypatch):
     """One consumer reads both, so the keys must match."""
     peer = _peer(registry)
