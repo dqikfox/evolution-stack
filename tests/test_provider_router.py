@@ -91,6 +91,18 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+@pytest.fixture(autouse=True)
+def isolated_ledger(tmp_path, monkeypatch):
+    """No test may write to the production ledger.
+
+    route() and call() record every attempt, so without this the suite would
+    pollute the real spend log with rows named after test fixtures. The ledger
+    is redirected into tmp_path for the whole test.
+    """
+    monkeypatch.setattr(pr, "LEDGER", tmp_path / "provider_ledger.jsonl")
+    yield
+
+
 @pytest.fixture
 def server():
     srv = HTTPServer(("127.0.0.1", 0), _Handler)
@@ -260,11 +272,10 @@ def test_health_includes_the_blocked_providers(monkeypatch):
         assert b["provider"] in reported, "%s is blocked but health does not report it" % b["provider"]
 
 
-def test_the_ledger_records_a_call(tmp_path, monkeypatch):
-    led = tmp_path / "ledger.jsonl"
-    monkeypatch.setattr(pr, "LEDGER", led)
+def test_the_ledger_records_a_call(isolated_ledger):
     pr.record({"provider": "x", "model": "m", "ok": True, "elapsed": 1.0,
                "tokens_in": 1, "tokens_out": 1, "cost_usd": 0.5})
+    led = pr.LEDGER
     row = json.loads(led.read_text(encoding="utf-8").splitlines()[0])
     assert row["provider"] == "x"
     assert row["cost_usd"] == 0.5
