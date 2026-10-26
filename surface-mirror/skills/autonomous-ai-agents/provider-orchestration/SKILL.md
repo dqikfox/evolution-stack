@@ -128,6 +128,21 @@ against its own provider with its own latency, tokens and cost.
 - **A provider is healthy only if a real request returned the expected
   content.** A models list, a 200 on a page, or a config claiming it works
   proves nothing. Probe with `Reply with exactly: ORCHESTRA OK`.
+- **A missing body is not an error message.** A request that times out
+  returns no body at all, so the transport error is the only evidence of
+  what happened. If the body-handler stringifies `None`, the published
+  error reads literally "None" and the provider looks broken for a reason
+  nobody can name. Fall back to the transport error, then to the status
+  code. Never let an empty body become the word "None".
+- **One transport failure is not a verdict.** A cold start - a model
+  loading, an index opening - is not the provider being down. Retry the
+  probe once and let only a second failure count, the same
+  two-agreeing-probes rule the estate alerting uses. A credential failure
+  and a wrong answer are verdicts on the FIRST try: do not retry those.
+- **A local provider is not on the internet.** It is a process on this host
+  with no network latency, so a miss is a cold start and not a slow route.
+  Give it a longer floor (45s) than a hosted provider gets, or the first
+  request after a restart will report it dead.
 - **A key that cannot pay is BLOCKED, not FAILED.** Keep it out of the
   rotation; do not retry it on every call.
 - **A vault outage must not change a provider's verdict.** "The credential
