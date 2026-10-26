@@ -383,6 +383,12 @@ those two files true rather than decorative.
   leave/replace/refuse, then detached start.** Every launcher in this house
   checks its tools before it touches the port, so a launcher missing a probe
   cannot destroy a working service and only then report the missing file.
+- **A service's status must come from its health BODY, not a TCP connect.**
+  The estate's own status check used a socket connect, so a service whose
+  `/health` served a page counted as healthy while its API was dead. Read
+  the body, and reject a body that is HTML or that reports `not_ready`.
+- **A registry entry that names a page-serving route is a false pass** once
+  the check is body-aware. Name the route that returns the status payload.
 - **A TCP connect is not a health check.** A port that accepts a connection
   proves nothing: an SPA answers `/health` with its own shell, so a 200 there
   is a file being served, not a service being ready. Probe the BODY of the
