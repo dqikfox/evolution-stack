@@ -57,6 +57,28 @@ ENV["FILTER_BRANCH_SQUELCH_WARNING"] = "1"
 for _v in ("PWD", "OLDPWD"):
     ENV.pop(_v, None)
 
+# A push must never be able to hang forever, and it must never be able to
+# stop and ask a question.
+#
+# GIT_TERMINAL_PROMPT=0 turns a credential prompt into an immediate failure
+# instead of a wait. Git Credential Manager has an interactive browser flow
+# that will sit there for hours in a non-interactive session.
+#
+# GIT_LFS_SKIP_PUSH=1 skips the git-lfs pre-push hook. A commit-metadata
+# rewrite does not change a single LFS object, so re-uploading them is pure
+# waste - and on a repo with 53 LFS pointers over 383 commits it was the
+# thing that stalled the publish.
+ENV["GIT_TERMINAL_PROMPT"] = "0"
+ENV["GCM_INTERACTIVE"] = "never"
+ENV["GIT_LFS_SKIP_PUSH"] = "1"
+
+# The scratch directory the backup bundles are written to.
+SCRATCH = r"C:\Users\KING\AppData\Local\hermes\cache\scratch"
+
+# A push that has not finished in 30 minutes is not going to finish. The
+# failure must be loud, not a silent hour-long stall.
+PUSH_TIMEOUT = 1800
+
 
 def git(repo, *args, timeout=3600):
     return subprocess.run([GIT, "-C", repo] + list(args), capture_output=True, text=True,
@@ -133,18 +155,30 @@ def main(name, url, workdir=None):
         return False
 
     # filter-branch leaves refs/original/* behind, keeping the old history
-    # reachable, so the old commits must be dropped and the objects pruned.
-    orig = git(str(work), "for-each-ref", "--format=%(refname)", "refs/original/").stdout.strip()
-    for ref in (orig.splitlines() if orig else []):
-        git(str(work), "update-ref", "-d", ref)
-    git(str(work), "reflog", "expire", "--expire=now", "--all")
-    git(str(work), "gc", "--prune=now", "--quiet", timeout=3600)
+    # reachable. That reachability is REQUIRED until the push has happened -
+    # see the note at the cleanup step below - so nothing is removed yet.
 
     after = count_ours(str(work))
     print("   local-identity commits after:  %d" % after, flush=True)
     if after != 0:
         print("   STILL PRESENT - not pushing", flush=True)
         return False
+
+    # A backup bundle BEFORE the push, so a failed or interrupted publish can
+    # always be recovered from the original history.
+    bundle = Path(SCRATCH) / ("%s-history-preidentity.bundle" % name.replace("/", "-"))
+    try:
+        bundle.parent.mkdir(parents=True, exist_ok=True)
+        b = subprocess.run([GIT, "-C", str(work), "bundle", "create", str(bundle), "--all"],
+                           capture_output=True, text=True, timeout=7200, env=ENV,
+                           encoding="utf-8", errors="replace")
+        if b.returncode == 0:
+            print("   the pre-push backup: %s (%.1f MB)" % (bundle.name,
+                                                            bundle.stat().st_size / 1048576), flush=True)
+        else:
+            print("   the backup bundle FAILED: %s" % (b.stderr or "").strip()[-120:], flush=True)
+    except Exception as e:
+        print("   the backup bundle FAILED: %s" % str(e)[:100], flush=True)
 
     # the lease is taken from the ORIGINAL remote state, so a branch that
     # moved under us is refused rather than overwritten.
@@ -157,7 +191,8 @@ def main(name, url, workdir=None):
     ok = 0
     failed = []
     for br, sha in remotes.items():
-        p = git(str(work), "push", "--force-with-lease=%s:%s" % (br, sha), "origin", "%s:%s" % (br, br))
+        p = git(str(work), "push", "--force-with-lease=%s:%s" % (br, sha), "origin",
+                "%s:%s" % (br, br), timeout=PUSH_TIMEOUT)
         if p.returncode == 0:
             ok += 1
         else:
@@ -167,6 +202,21 @@ def main(name, url, workdir=None):
         print("     FAILED %s: %s" % (br[:60], err), flush=True)
     if len(failed) > 10:
         print("     ... and %d more" % (len(failed) - 10), flush=True)
+
+    # NOW the old history can go. It was kept reachable through the push on
+    # purpose: git's push negotiation works by offering the server the
+    # commits the client already has, and the server's old tip is the common
+    # base. Without it the client has no common ancestor with the server, so
+    # the pack carries the WHOLE repository instead of the small delta.
+    #
+    # On a 1.28 GB Unity asset repo that turned a 2 MB push into a 1.28 GB
+    # upload, and the pack builder crawled for 40 minutes at 0% CPU.
+    # Pruning BEFORE the push is what caused it.
+    orig = git(str(work), "for-each-ref", "--format=%(refname)", "refs/original/").stdout.strip()
+    for ref in (orig.splitlines() if orig else []):
+        git(str(work), "update-ref", "-d", ref)
+    git(str(work), "reflog", "expire", "--expire=now", "--all")
+    git(str(work), "gc", "--prune=now", "--quiet", timeout=3600)
 
     # Tags carry history too, and a tag that still points at an old commit
     # keeps that history reachable.
@@ -179,7 +229,11 @@ def main(name, url, workdir=None):
         tags[ref] = sha
     tag_ok = 0
     for tag, sha in tags.items():
-        p = git(str(work), "push", "--force", "origin", "refs/tags/%s:refs/tags/%s" % (tag, tag))
+        # A tag carries history, so it needs the same lease as a branch: a
+        # tag that moved under us must be refused, not clobbered.
+        p = git(str(work), "push",
+                "--force-with-lease=refs/tags/%s:%s" % (tag, sha), "origin",
+                "refs/tags/%s:refs/tags/%s" % (tag, tag), timeout=PUSH_TIMEOUT)
         if p.returncode == 0:
             tag_ok += 1
         else:
