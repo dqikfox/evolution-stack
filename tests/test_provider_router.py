@@ -118,6 +118,15 @@ def server():
 
 
 def mk(name, base, model="test-model", **kw):
+    """Build a test provider.
+
+    'local' is inferred from the base URL: a 127.0.0.1 endpoint is local and
+    accepts the well-known placeholder bearer, a hosted endpoint must be
+    given a real credential. An explicit local=... always wins.
+    """
+    if "local" not in kw:
+        host = base.split("/")[2].split(":")[0] if base.count("/") >= 2 else ""
+        kw["local"] = host in ("127.0.0.1", "localhost", "::1")
     return pr.Provider(name, kw.pop("kind", "openai"), base, model, **kw)
 
 
@@ -279,3 +288,159 @@ def test_the_ledger_records_a_call(isolated_ledger):
     row = json.loads(led.read_text(encoding="utf-8").splitlines()[0])
     assert row["provider"] == "x"
     assert row["cost_usd"] == 0.5
+
+
+# ------------------------------------------------------- the vault contract
+
+def test_a_rate_limited_vault_is_not_a_missing_credential(monkeypatch):
+    """A vault that will not answer is NOT the same as a credential that does
+    not exist.
+
+    The bug this guards: vault_secret() swallowed every error and returned
+    None, so a 1Password rate limit looked exactly like 'no key'. The router
+    then sent a placeholder bearer to a hosted API, got 'invalid_api_key'
+    back, and reported the provider as broken - when the provider was fine
+    and only the vault was busy.
+    """
+    def boom(*a, **k):
+        raise pr.VaultUnavailable("Too many requests. Your client has been rate-limited.")
+
+    monkeypatch.setattr(pr, "vault_secret", boom)
+    p = mk("t", "http://127.0.0.1:1", key_vault="Some Item", key_env=None)
+    with pytest.raises(pr.VaultUnavailable):
+        pr.resolve_key(p)
+
+
+def test_a_vault_outage_keeps_the_last_known_provider_state(monkeypatch, tmp_path):
+    """The state of a provider must not change because the vault was busy.
+
+    A provider that was healthy stays healthy in the report, with the reason
+    attached. Otherwise a 30-second 1Password blip silently demotes a
+    working provider on the dashboard.
+    """
+    monkeypatch.setattr(pr, "LAST_KNOWN", tmp_path / "provider_last_known.json")
+    pr._remember("xai", {"provider": "xai", "model": "grok-3", "status": "healthy",
+                          "elapsed": 1.2, "error": None})
+
+    def boom(*a, **k):
+        raise pr.VaultUnavailable("the vault was rate-limited")
+
+    monkeypatch.setattr(pr, "vault_secret", boom)
+    p = mk("xai", "http://127.0.0.1:1", key_vault="Some Item", key_env=None)
+    row = pr.probe(p, timeout=5)
+    assert row["status"] == "healthy", "a vault outage changed the provider state to %r" % row["status"]
+    assert "vault" in (row["error"] or "").lower(), "the reason must be attached"
+
+
+def test_a_vault_outage_never_becomes_the_last_known_state(monkeypatch, tmp_path):
+    """A state the provider was never SEEN in must not be remembered.
+
+    If a vault outage wrote its own state into the record, the next outage
+    would read back 'vault' as if the provider had been seen in it - and the
+    real state would be lost for good.
+    """
+    lk = tmp_path / "provider_last_known.json"
+    monkeypatch.setattr(pr, "LAST_KNOWN", lk)
+
+    def boom(*a, **k):
+        raise pr.VaultUnavailable("the vault was rate-limited")
+
+    monkeypatch.setattr(pr, "vault_secret", boom)
+    p = mk("xai", "http://127.0.0.1:1", key_vault="Some Item", key_env=None)
+    pr.probe(p, timeout=5)
+    assert not lk.exists(), "a vault outage wrote a state the provider was never seen in"
+    if lk.exists():
+        d = json.loads(lk.read_text(encoding="utf-8"))
+        assert d.get("xai", {}).get("status") != "vault"
+
+
+def test_a_vault_outage_with_no_previous_state_is_unknown_not_failed(monkeypatch, tmp_path):
+    """With no prior state to keep, the provider is 'vault', never 'failed'."""
+    monkeypatch.setattr(pr, "LAST_KNOWN", tmp_path / "provider_last_known.json")
+
+    def boom(*a, **k):
+        raise pr.VaultUnavailable("the vault was rate-limited")
+
+    monkeypatch.setattr(pr, "vault_secret", boom)
+    p = mk("xai", "http://127.0.0.1:1", key_vault="Some Item", key_env=None)
+    row = pr.probe(p, timeout=5)
+    assert row["status"] == "vault", "expected the vault state, got %r" % row["status"]
+    assert row["status"] != "failed"
+
+
+def test_no_placeholder_credential_is_sent_to_a_hosted_api(monkeypatch):
+    """A HOSTED API must never receive a placeholder bearer token.
+
+    The old code sent 'nexus-local' when there was no key, which the provider
+    answered with 'invalid_api_key' - a false diagnosis of bad credentials
+    when the truth was that the vault would not give us one.
+    """
+    sent = {}
+
+    def capture(url, payload, headers, timeout):
+        sent["headers"] = dict(headers)
+        return 401, {"error": {"code": "invalid_api_key", "message": "Incorrect API key provided"}}, None
+
+    monkeypatch.setattr(pr, "_post", capture)
+    monkeypatch.setattr(pr, "resolve_key", lambda p: None)
+    p = mk("openai", "https://api.openai.com/v1", kind="openai", key_env=None, key_vault=None)
+    with pytest.raises(RuntimeError):
+        pr.call(p, "hello", max_tokens=16, timeout=5)
+    assert "headers" not in sent, "a hosted API was called with no credential at all"
+    assert sent.get("headers", {}).get("Authorization", "").lower() != "bearer nexus-local", \
+        "a placeholder credential was sent to a hosted API"
+
+
+def test_a_local_endpoint_still_accepts_the_placeholder(monkeypatch):
+    """The NEXUS proxy is local and expects the well-known placeholder.
+
+    The hosted-API fix must not break the local path.
+    """
+    sent = {}
+
+    def capture(url, payload, headers, timeout):
+        sent["headers"] = dict(headers)
+        return 200, {"choices": [{"message": {"content": "ORCHESTRA OK"}}],
+                     "usage": {"prompt_tokens": 1, "completion_tokens": 1}}, None
+
+    monkeypatch.setattr(pr, "_post", capture)
+    monkeypatch.setattr(pr, "resolve_key", lambda p: None)
+    p = mk("nexus", "http://127.0.0.1:8650/v1", kind="openai", key_env=None, key_vault=None,
+           local=True)
+    text, _ = pr.call(p, "hello", max_tokens=16, timeout=5)
+    assert text == "ORCHESTRA OK"
+    assert sent["headers"]["Authorization"] == "Bearer nexus-local"
+
+
+def test_the_router_never_writes_a_plaintext_secret_to_disk(monkeypatch, tmp_path):
+    """The DPAPI cache must not hold a plaintext secret."""
+    monkeypatch.setattr(pr, "VAULT_DIR", tmp_path)
+    monkeypatch.setattr(pr, "_dpapi", lambda plain, protect=True: "CIPHER-" + plain[::-1])
+    pr._cache_write("Some Item", "credential", "SUPER-SECRET-VALUE")
+    for f in tmp_path.iterdir():
+        blob = f.read_text(encoding="utf-8")
+        assert "SUPER-SECRET-VALUE" not in blob, "a plaintext secret reached %s" % f.name
+
+
+def test_a_real_response_updates_the_last_known_record(server, monkeypatch, tmp_path):
+    """A state the provider was actually SEEN in is remembered."""
+    lk = tmp_path / "provider_last_known.json"
+    monkeypatch.setattr(pr, "LAST_KNOWN", lk)
+    server.mode = "ok"
+    p = mk("t", "http://127.0.0.1:%d" % server.server_port)
+    pr.probe(p)
+    d = json.loads(lk.read_text(encoding="utf-8"))
+    assert d["t"]["status"] == "healthy"
+    assert d["t"]["seen_at"], "the record must say when the state was observed"
+
+
+def test_the_last_known_record_holds_no_secret_material(server, monkeypatch, tmp_path):
+    """The record must not carry the credential it was fetched with."""
+    lk = tmp_path / "provider_last_known.json"
+    monkeypatch.setattr(pr, "LAST_KNOWN", lk)
+    server.mode = "ok"
+    p = mk("t", "http://127.0.0.1:%d" % server.server_port, key_vault="Some Item")
+    monkeypatch.setattr(pr, "vault_secret", lambda *a, **k: "SUPER-SECRET-VALUE")
+    pr.probe(p)
+    blob = lk.read_text(encoding="utf-8")
+    assert "SUPER-SECRET-VALUE" not in blob, "the record contains the credential"

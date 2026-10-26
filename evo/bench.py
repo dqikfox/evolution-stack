@@ -196,6 +196,14 @@ def check_providers() -> list[Check]:
         mod = importlib.util.module_from_spec(spec)
         sys.modules["_estate_provider_router"] = mod
         spec.loader.exec_module(mod)
+        # The router keeps a provider's last known state when the vault will
+        # not answer, so it has to read and write the SAME record this check
+        # publishes. Set it BEFORE probing, not after.
+        try:
+            mod.STATE = paths.STATE
+            mod.LAST_KNOWN = paths.STATE / "provider_last_known.json"
+        except Exception:
+            pass
         rows = mod.health(timeout=25)
     except Exception as e:
         return [Check("providers:probe", "providers", 5.0, False,
@@ -236,8 +244,11 @@ def check_providers() -> list[Check]:
 
     # Every provider must be accounted for: healthy, blocked with a reason, or
     # failed. A provider that silently vanishes from the report is a defect.
+    # 'vault' means the 1Password vault would not answer, which is an
+    # infrastructure condition, not a provider verdict - it is accounted for
+    # as long as it carries a reason.
     unaccounted = [r["provider"] for r in rows
-                   if r.get("status") not in ("healthy", "blocked")
+                   if r.get("status") not in ("healthy", "blocked", "vault")
                    and not r.get("error")]
     out.append(Check(
         "providers:accounted", "providers", 2.0, not unaccounted,

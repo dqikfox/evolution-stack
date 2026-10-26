@@ -43,6 +43,16 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 LEDGER = Path(os.environ.get("HERMES_HOME", r"C:\Users\KING\AppData\Local\hermes")) / "logs" / "provider_ledger.jsonl"
+# The canonical provider state directory. The bench publishes providers.json
+# here, TESSERACT reads it from here, and the router keeps its last-known
+# record beside it - so all three agree on one picture.
+STATE = Path(os.environ.get("PROVIDER_STATE_DIR",
+                            r"E:\ultron-memory\evolution-stack\state"))
+# The last state each provider was actually SEEN in. Only a real response
+# from the provider may update this file - never an infrastructure failure.
+# So a 1Password rate limit cannot overwrite a healthy provider's state and
+# then be read back as if it were the truth.
+LAST_KNOWN = STATE / "provider_last_known.json"
 OP_EXE = r"C:\Users\KING\AppData\Local\Microsoft\WinGet\Links\op.exe"
 OP_SA = Path(r"C:\Users\KING\.ultron\.op_service_account")
 VAULT = "credentials"
@@ -143,10 +153,80 @@ def win_env(name: str) -> str | None:
     return None
 
 
-def vault_secret(title: str, field: str = "credential") -> str | None:
-    """Read one secret out of the 1Password service account. Never logged."""
-    if not OP_SA.is_file() or not Path(OP_EXE).is_file():
+class VaultUnavailable(RuntimeError):
+    """The vault was reached but could not answer (rate limit, outage, timeout).
+
+    This is NOT the same as 'the credential does not exist'. A rate-limited
+    vault must never change a provider's reported state, so it gets its own
+    exception and its own status.
+    """
+
+
+# A 1Password outage degrades a provider, it does not change what the
+# provider IS. So the resolved secret is cached with Windows DPAPI
+# (CurrentUser scope) and the cache is used when the vault will not answer.
+# The plaintext never touches the disk and never appears on a command line.
+VAULT_DIR = Path(os.environ.get("HERMES_HOME", r"C:\Users\KING\AppData\Local\hermes")) / "vault"
+
+
+def _dpapi(plain: str, protect: bool = True) -> str:
+    script = (
+        "try{Add-Type -AssemblyName System.Security}catch{};"
+        "try{Add-Type -AssemblyName System.Security.Cryptography.ProtectedData}catch{};"
+        "$b=[System.Text.Encoding]::UTF8.GetBytes($env:PLAIN);"
+        "$p=[System.Security.Cryptography.ProtectedData]::Protect($b,$null,"
+        "[System.Security.Cryptography.DataProtectionScope]::CurrentUser);"
+        "[Convert]::ToBase64String($p)"
+        if protect else
+        "try{Add-Type -AssemblyName System.Security}catch{};"
+        "try{Add-Type -AssemblyName System.Security.Cryptography.ProtectedData}catch{};"
+        "$b=[Convert]::FromBase64String($env:CIPHER);"
+        "$p=[System.Security.Cryptography.ProtectedData]::Unprotect($b,$null,"
+        "[System.Security.Cryptography.DataProtectionScope]::CurrentUser);"
+        "[System.Text.Encoding]::UTF8.GetString($p)"
+    )
+    env = dict(os.environ)
+    env["PLAIN" if protect else "CIPHER"] = plain
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                       capture_output=True, text=True, timeout=60, env=env)
+    if r.returncode != 0:
+        raise RuntimeError("DPAPI failed: %s" % (r.stderr or "")[:120])
+    return r.stdout.strip()
+
+
+def _cache_path(title: str, field: str) -> Path:
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in "%s.%s" % (title, field))
+    return VAULT_DIR / ("%s.dpapi" % safe)
+
+
+def _cache_read(title: str, field: str) -> str | None:
+    p = _cache_path(title, field)
+    if not p.is_file():
         return None
+    try:
+        return _dpapi(p.read_text(encoding="utf-8").strip(), protect=False)
+    except Exception:
+        return None
+
+
+def _cache_write(title: str, field: str, value: str) -> None:
+    try:
+        VAULT_DIR.mkdir(parents=True, exist_ok=True)
+        _cache_path(title, field).write_text(_dpapi(value), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def vault_secret(title: str, field: str = "credential") -> str | None:
+    """Read one secret out of the 1Password service account. Never logged.
+
+    Raises VaultUnavailable when the vault was reached but would not answer
+    (rate limit, outage). Returns None only when the item genuinely has no
+    such field. Falls back to the DPAPI cache so a vault outage degrades the
+    provider instead of silently changing its state.
+    """
+    if not OP_SA.is_file() or not Path(OP_EXE).is_file():
+        raise VaultUnavailable("the 1Password CLI or the service account is missing")
     env = dict(os.environ)
     env["OP_SERVICE_ACCOUNT_TOKEN"] = OP_SA.read_text(encoding="utf-8").strip()
     try:
@@ -154,20 +234,46 @@ def vault_secret(title: str, field: str = "credential") -> str | None:
             [OP_EXE, "item", "get", title, "--vault", VAULT, "--format", "json", "--reveal"],
             capture_output=True, text=True, timeout=90, env=env,
             encoding="utf-8", errors="replace")
-        if r.returncode != 0:
+    except Exception as e:
+        cached = _cache_read(title, field)
+        if cached:
+            return cached
+        raise VaultUnavailable("the vault call failed: %s" % str(e)[:100])
+    if r.returncode != 0:
+        err = (r.stderr or "").strip()
+        # A rate limit or an outage is not a missing credential.
+        if "rate-limit" in err.lower() or "too many requests" in err.lower() \
+                or "couldn't connect" in err.lower() or "server error" in err.lower():
+            cached = _cache_read(title, field)
+            if cached:
+                return cached
+            raise VaultUnavailable(err[:140] or "the vault was rate-limited")
+        # The item may not exist at all. That IS a real answer.
+        if "not found" in err.lower() or "no item" in err.lower():
             return None
+        cached = _cache_read(title, field)
+        if cached:
+            return cached
+        raise VaultUnavailable(err[:140] or "the vault call failed")
+    try:
         data = json.loads(r.stdout)
     except Exception:
-        return None
+        cached = _cache_read(title, field)
+        if cached:
+            return cached
+        raise VaultUnavailable("the vault returned an unreadable answer")
     for f in data.get("fields", []):
         if f.get("id") == field:
             v = str(f.get("value", "")).strip()
             if v:
+                _cache_write(title, field, v)
                 return v
     return None
 
 
 def resolve_key(p: Provider) -> str | None:
+    """The credential for a provider. Raises VaultUnavailable if the vault
+    would not answer - never silently returns None for that reason."""
     if p.key_env:
         v = win_env(p.key_env)
         if v:
@@ -223,7 +329,17 @@ def call(p: Provider, prompt: str, max_tokens: int = 256, timeout: int = 120):
         meta["tokens_out"] = usage.get("output_tokens", 0)
 
     elif p.kind == "openai":
-        headers = {"Authorization": "Bearer " + (key or "nexus-local")}
+        if not key:
+            # A LOCAL endpoint (the NEXUS proxy) accepts a well-known
+            # placeholder. A HOSTED API must never receive one: it answers
+            # 'invalid_api_key', which reads as bad credentials when the
+            # truth is that we had no credential to send.
+            if p.local:
+                key = "nexus-local"
+            else:
+                meta["error"] = "no key"
+                raise RuntimeError("no key")
+        headers = {"Authorization": "Bearer " + key}
         payload = {"model": p.model, "max_tokens": max_tokens,
                    "messages": [{"role": "user", "content": prompt}]}
         # The Responses API is required for the newest OpenAI reasoning models.
@@ -315,11 +431,57 @@ def probe(p: Provider, timeout: int = 90) -> dict:
         out["elapsed"] = meta.get("elapsed")
         if not ok:
             out["error"] = "responded but did not match: %r" % text[:60]
+    except VaultUnavailable as e:
+        # The vault would not answer. That is NOT a provider failure and it is
+        # NOT missing credentials. The provider's last known state is kept so
+        # a rate limit cannot silently demote a working provider.
+        out["status"] = "vault"
+        out["error"] = str(e)[:140]
+        prev = _last_known(p.name)
+        if prev and prev.get("status") not in (None, "unknown"):
+            out["status"] = prev["status"]
+            out["elapsed"] = prev.get("elapsed")
+            out["error"] = ("the vault would not answer; the last known state is kept "
+                            "(%s)" % str(e)[:80])
+        # NOTE: nothing is remembered here. A state the provider was never
+        # seen in must not become the last known state.
+        return out
     except Exception as e:
         msg = str(e)
         out["status"] = classify(msg)
         out["error"] = msg[:140]
+    # The provider answered, so this IS an observed state: remember it.
+    _remember(p.name, out)
     return out
+
+
+def _last_known(provider: str) -> dict | None:
+    """The state the provider was last SEEN in, from a real response."""
+    try:
+        if not LAST_KNOWN.is_file():
+            return None
+        d = json.loads(LAST_KNOWN.read_text(encoding="utf-8", errors="replace"))
+        row = d.get(provider)
+        return row if isinstance(row, dict) else None
+    except Exception:
+        return None
+
+
+def _remember(provider: str, row: dict) -> None:
+    """Record a state the provider was actually observed in."""
+    try:
+        d = {}
+        if LAST_KNOWN.is_file():
+            d = json.loads(LAST_KNOWN.read_text(encoding="utf-8", errors="replace"))
+        d[provider] = {"status": row.get("status"), "model": row.get("model"),
+                       "elapsed": row.get("elapsed"), "error": row.get("error"),
+                       "seen_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        LAST_KNOWN.parent.mkdir(parents=True, exist_ok=True)
+        tmp = LAST_KNOWN.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(d, indent=2), encoding="utf-8")
+        tmp.replace(LAST_KNOWN)
+    except Exception:
+        pass
 
 
 def health(timeout: int = 90) -> list[dict]:
