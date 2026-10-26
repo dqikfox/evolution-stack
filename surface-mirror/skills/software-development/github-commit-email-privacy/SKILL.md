@@ -273,6 +273,30 @@ Take a bundle and VERIFY it. A backup that cannot be restored is not a backup.
     git bundle create ../<repo>-history.bundle --all
     git bundle verify ../<repo>-history.bundle
 
+## Audit the whole account in ONE local pass, not one API page at a time
+
+Walking every commit of every branch through the commits endpoint is authoritative but it is O(branches x history) round trips. A repository with 173 branches, where one dependabot branch has 95 pages of history, will not finish in a useful time - and the account had 68 repositories. The API auditor was still running after twenty minutes with 34 of 68 done.
+
+What works is a **treeless bare clone** and ONE local pass:
+
+    git clone --bare --filter=tree:0 --no-tags https://github.com/dqikfox/<repo>.git <dir>
+    git -C <dir> log --all --no-merges --format='%H|%ae|%an'
+
+That is the same coverage in one pass per repository: 12 seconds for the 173-branch repository, against 884 seconds for the API version. Keep the API for the three things only it can do:
+
+- **PROOF** - for every commit the local scan flags, fetch it through the commits endpoint and read `.author.login`. The local email match is a LEAD; the API is the VERDICT.
+- **CONTROL** - walk the default branch of every repository through the API as well, and require the two scans to agree. A local pass that disagrees FAILS the run instead of reporting a clean account.
+- **POSITIVE CONTROL** - scan a synthetic repository carrying a planted local identity first. A scan that cannot see a known offender proves nothing about the ones it did not see.
+
+    python verify_all_branches_fast.py              # every dqikfox repo
+    python verify_all_branches_fast.py dqikfox/vision
+
+Three defects fell out of writing it, and all three are traps in any identity audit:
+
+- **The offence is the email AND the link, not either one.** An author with no GitHub account has a null `author.login`, so the expression substitutes `UNLINKED` - and a third party's bot commit (the Manus AI fix bot) is unlinked too. Flagging `UNLINKED` on its own produced four false positives on the largest repository in the account. The rule is `login == "UNLINKED" AND email in BAD`.
+- **URL-ENCODE the branch name before it goes into an API path.** A branch carrying an emoji came back as an HTML error page, the JSON parser failed with `invalid character '<' looking for beginning of value`, and that branch was silently skipped on the largest repository. A branch that could not be audited is not a clean branch.
+- **One identity set, shared, lower-cased, compared case-insensitively.** Two auditors with two sets produce two verdicts about the same repository - the API one held `Shadow@SHADOW-EOKGST4R` in mixed case and the other did not.
+
 ## The tools
 
 They live at `C:/Users/KING/AppData/Local/hermes/scripts/git_identity/`:
@@ -290,7 +314,10 @@ They live at `C:/Users/KING/AppData/Local/hermes/scripts/git_identity/`:
   Do NOT use a `--mirror` clone for this: it sets `remote.origin.mirror`, and
   every push then fails with `--mirror can't be combined with refspecs`.
 - `verify_all_branches.py` - audits EVERY branch of EVERY repo and names the
-  offending branch.
+  offending branch, through the API.
+- `verify_all_branches_fast.py` - the same coverage in one local pass per
+  repository, with the API for the proof, the control and the positive
+  control. Use this for a whole-account audit.
 - `rewrite_queue.py` - runs a list of repos from a JSON file. The paths live
   in the FILE, because argv goes through the MSYS argument conversion.
 - `push_all_branches.py` - fetch every remote branch, then push each one
