@@ -571,6 +571,15 @@ def classify(err: str) -> str:
                              "payment required", "usage limit", "upgrade to",
                              "exhausted")):
         return "blocked"
+    # A 429 from the ChatGPT Codex CLI arrives as "exceeded retry limit, last
+    # status: 429 Too Many Requests". The Plus worker window is exhausted:
+    # the credential is real, the subscription is real, and the entitlement
+    # proof still stands - the plan simply will not serve more right now.
+    # Calling that 'failed' sends the rotation down a path that assumes a
+    # broken credential, and the test then fails an integration that works.
+    # It is BLOCKED, exactly like a usage cap.
+    if "429" in s or "too many requests" in s:
+        return "blocked"
     if any(k in s for k in ("api key", "unauthorized", "authentication", "401", "invalid")):
         return "noauth"
     if any(k in s for k in ("not found", "404", "model")):

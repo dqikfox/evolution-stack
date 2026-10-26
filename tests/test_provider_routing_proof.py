@@ -65,7 +65,13 @@ def _nonce() -> str:
 # transport are still real. The test must skip on that, and must NOT skip
 # on anything else - a wrong answer or a broken transport still fails.
 QUOTA_MARKS = ("usage limit", "upgrade to", "quota", "credit", "exhausted",
-               "insufficient", "billing", "rate limit")
+               "insufficient", "billing", "rate limit",
+               # the Codex CLI reports an exhausted Plus worker window as
+               # "exceeded retry limit, last status: 429 Too Many Requests".
+               # That is a plan cap, not a broken integration, and the proof
+               # must skip on it - but ONLY on it. A wrong answer or a dead
+               # transport still fails.
+               "429", "too many requests")
 
 
 def _quota_capped(d: dict) -> str:
