@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import socket
+import urllib.request
 import os
 import subprocess
 import sys
@@ -95,14 +96,44 @@ def port_open(port: int, host: str = "127.0.0.1", timeout: float = 0.5) -> bool:
         return False
 
 
+def health_body_ok(s: Service, timeout: float = 3.0) -> bool:
+    """True when the service's health route answers with a usable body.
+
+    A TCP connect is not health. The KRYSYS SPA answers /health with its own
+    shell, so a port check reports it "up" while the API behind it is dead.
+    When the registry names a health URL, the body must be fetched and must
+    not say the service is not ready. A route that answers with HTML is a
+    static file being served, not a service reporting itself healthy.
+    """
+    if not s.health:
+        return True  # nothing to assert beyond the port
+    try:
+        with urllib.request.urlopen(s.health, timeout=timeout) as resp:
+            if resp.status != 200:
+                return False
+            body = resp.read(20000).decode("utf-8", "replace")
+    except Exception:
+        return False
+    low = body.lower()
+    if "not_ready" in low or '"ok":false' in low.replace(" ", ""):
+        return False
+    # A JSON health payload is the real answer. HTML means the route served a
+    # page instead of the health endpoint.
+    stripped = body.lstrip()
+    if stripped.startswith("<"):
+        return False
+    return True
+
+
 def status_of(s: Service) -> str:
     if s.status == "retired":
         return "retired"
-    if port_open(s.port):
-        return "up"
-    if s.status == "optional":
-        return "optional"
-    return "down"
+    if not port_open(s.port):
+        return "optional" if s.status == "optional" else "down"
+    if not health_body_ok(s):
+        # The port answers but the service does not report itself ready.
+        return "optional" if s.status == "optional" else "down"
+    return "up"
 
 
 def clean_env() -> dict:
