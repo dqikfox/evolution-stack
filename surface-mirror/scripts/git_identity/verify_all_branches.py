@@ -33,12 +33,25 @@ import os
 import subprocess
 import sys
 import time
+import urllib.parse
 
+# The local identities this account must never carry on a remote. These are
+# machine-local addresses; a commit carrying one is not linked to the
+# dqikfox GitHub account and is therefore not attributed to the owner.
+#
+# The set is canonical and lower-cased, and BOTH auditors use it. They
+# drifted once - one had "Shadow@SHADOW-EOKGST4R" in mixed case and the
+# other had it lower-cased, plus two extra entries - and two auditors with
+# two rules produce two different verdicts about the same repository.
+#
+# Every comparison lower-cases the email first, so a commit that carries
+# "King@Throne" is caught like "king@throne".
 BAD = {
-    "king@throne.local", "KING@THRONE", "ultron@talking.ai", "ultron@throne.local",
-    "ultron@hermes.local", "ultron@local", "ultron@tesseract.local",
-    "megatron@tesseract.local", "Shadow@SHADOW-EOKGST4R", "minion@throne.local",
-    "dqikfox@local",
+    "king@throne.local", "king@throne", "king@tesseract.local",
+    "ultron@talking.ai", "ultron@throne.local", "ultron@hermes.local",
+    "ultron@local", "ultron@tesseract.local", "ultron@throne",
+    "megatron@tesseract.local", "shadow@shadow-eokgst4r", "minion@throne.local",
+    "dqikfox@local", "throne@throne.local", "tesseract@throne.local",
 }
 ENV = dict(os.environ)
 ENV.pop("PYTHONPATH", None)
@@ -118,8 +131,17 @@ def audit_branch(repo: str, branch: str):
     hits = []
     page = 1
     while True:
+        # The branch name is URL-ENCODED.
+        #
+        # A branch whose name carries an emoji - the palette branch, for
+        # one - made the raw path come back as an HTML error page. The JSON
+        # parser then failed on it with "invalid character '<' looking for
+        # beginning of value", and a branch that could not be audited is not
+        # a clean branch. One branch was being skipped for exactly that
+        # reason, on the largest repository in the account.
+        q = urllib.parse.urlencode({"sha": branch, "per_page": 100, "page": page})
         out, err = gh_retry(
-            "api", "repos/%s/commits?sha=%s&per_page=100&page=%d" % (repo, branch, page),
+            "api", "repos/%s/commits?%s" % (repo, q),
             "--jq", JQ_COMMIT)
         if err:
             return hits, err
@@ -127,7 +149,7 @@ def audit_branch(repo: str, branch: str):
         for l in lines:
             login, _, rest = l.partition("|")
             email, _, sha = rest.partition("|")
-            if login == "UNLINKED" and email in BAD:
+            if login == "UNLINKED" and email.lower() in BAD:
                 hits.append((email, sha))
         if len(lines) < 100:
             break
