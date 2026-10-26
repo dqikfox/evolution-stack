@@ -173,6 +173,32 @@ the remote. vision alone has 173 branches. Use the tool that walks them all:
 
 It names the offending BRANCH, not just the repo.
 
+**An audit that cannot DETECT is not an audit.** The first version of
+`verify_all_branches.py` had a jq expression that escaped its inner quotes:
+
+    ".[] | \"\\(.author.login // \\\"UNLINKED\\\")|\\(.commit.author.email)|\\(.sha)\""
+
+jq rejects that with `unexpected token "\"`. `gh` exits non-zero, the
+pagination loop `break`s, and the branch is recorded as **CLEAN**. A broken
+query can only ever produce a false all-clear - the most dangerous possible
+failure for the tool that certifies the account.
+
+Three rules that came out of it:
+
+- **An API error is a first-class ERROR, never an empty hit list.** A
+  refusal and a clean branch must never look the same.
+- **The expression lives in one named constant** (`JQ_COMMIT`), so the
+  escaping cannot be got wrong twice.
+- **The tool must prove it can still find a known offender.** It has a
+  `--selftest` that checks the query parses AND that it detects the
+  real offender on `dqikfox/QHYSICS@reality-engine`. Run it before trusting
+  a clean result.
+
+    python verify_all_branches.py --selftest
+
+An audit that reports "every branch clean" after a rate limit has told you
+nothing about the account. It has told you the tool was not working.
+
 **Why the remote kept the old history:** the rewrite fetched the UNREWRITTEN
 remote branches into `refs/heads/` and pushed them straight back. A branch
 that only ever existed on the remote was never in the local ref set, so

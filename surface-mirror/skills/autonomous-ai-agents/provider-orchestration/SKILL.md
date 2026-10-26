@@ -74,6 +74,28 @@ transport. Rules that came with it:
 - **Entitlement cannot be judged from a models list.** Before declaring a
   provider blocked, try the client that owns the credential.
 
+## Giving ChatGPT a task, not just a question
+
+The Codex CLI is a full agent. Pointed at a working directory it can read and
+write files and run commands, so it becomes a worker rather than a chat
+endpoint.
+
+    C:\Users\KING\AppData\Local\hermes\scripts\chatgpt_worker.py \
+        "add a --version flag to the CLI" --cwd C:/project/x
+
+    ... --read-only     # the worker may only inspect and report
+    ... --json          # the raw result: text, usage, sandbox, elapsed
+
+The default sandbox is `workspace-write`, so the worker may change files
+inside `--cwd` and nowhere else. The session is `--ephemeral`: no session
+files are left behind. The child never inherits `PYTHONPATH`, `PYTHONHOME`,
+`PYTHONSTARTUP` or `VIRTUAL_ENV`.
+
+Proven on this host: asked to create a file, it created it, verified it, and
+reported the result in 34.6s. Asked to write a `fib` module to spec, it
+produced correct code - right algorithm, right exceptions, type annotations -
+and it passed a behavioural check, not a visual one.
+
 ## Proving the rotation (do it this way)
 
 A proof whose PROMPT CONTAINS the expected answer proves nothing - the model
