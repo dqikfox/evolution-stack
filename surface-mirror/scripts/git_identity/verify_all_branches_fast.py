@@ -272,10 +272,24 @@ def main(argv):
                 print("   %-40s SCAN FAILED" % repo, flush=True)
                 continue
 
+            # how many branches the remote has. Read BEFORE the control,
+            # because an empty repository has no default branch to walk and
+            # that is a fact, not a failure.
+            nb, berr = branch_count(repo)
+
             # the CONTROL: the default branch, through the API, must agree
             dflt, derr = default_branch(repo)
-            api_hits, api_errs = ([], ["the default branch could not be read"])
-            if not derr:
+            api_hits, api_errs = ([], [])
+            if derr:
+                api_errs = [derr]
+            elif nb == 0:
+                # An empty repository has no branches and no default branch.
+                # There is nothing to audit, which is not the same thing as a
+                # failure - it must not be counted as an error, or a run over
+                # a healthy account always ends with three red lines.
+                api_hits, api_errs = [], []
+                dflt = ""
+            else:
                 api_hits, api_errs = api_offenders(repo, dflt)
             local_default = [h for h in hits if any(b.split("/", 1)[-1] == dflt for b in h.get("branches", []))]
             agree = len(api_hits) == len(local_default)
@@ -302,7 +316,6 @@ def main(argv):
                         h["login"] = p[0]
                         proven.append(h)
                     break
-            nb, berr = branch_count(repo)
             results[repo] = {
                 "branches": nb, "local_hits": len(hits), "proven": len(proven),
                 "default_agrees": agree, "seconds": round(time.time() - t0, 1),
