@@ -169,3 +169,28 @@ Take a bundle and VERIFY it. A backup that cannot be restored is not a backup.
 
     git bundle create ../<repo>-history.bundle --all
     git bundle verify ../<repo>-history.bundle
+
+## The tools
+
+They live at `C:/Users/KING/AppData/Local/hermes/scripts/git_identity/`:
+
+- `rewrite_local_identities.py` - the selective rewrite (the env-filter, the
+  native git, the lease push). Import and call `rewrite(name, repo)`.
+- `rewrite_queue.py` - runs a list of repos from a JSON file. The paths live
+  in the FILE, because argv goes through the MSYS argument conversion.
+- `push_all_branches.py` - fetch every remote branch, then push each one
+  with an explicit lease.
+
+    python rewrite_queue.py queue.json
+
+A `queue.json` is:
+
+    {"repos": [{"name": "lummings", "path": "C:/Users/KING/projects/lumming"}]}
+
+**Always prove the filter on a throwaway repo first** - one local-identity
+commit, one bot commit, one dqikfox commit - and confirm the local identities
+changed while the bot's did not. A filter that matches nothing reports success
+and changes nothing.
+
+**And verify the count changed.** The script prints
+`local-identity commits N -> M`. If N == M, the filter did not fire.
