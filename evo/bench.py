@@ -205,6 +205,26 @@ def check_providers() -> list[Check]:
     blocked = [r for r in rows if r.get("status") == "blocked"]
     names = ", ".join(r["provider"] for r in healthy) or "none"
 
+    # Publish the snapshot so a dashboard can read the current picture without
+    # probing five providers on every refresh. The file carries its own age.
+    #
+    # The target is paths.STATE, not a hard-coded path, so a test that
+    # redirects paths.STATE publishes into its own tmp dir. Publishing to the
+    # real state file from a test would replace the live dashboard's data with
+    # test fixtures - which is exactly what happened once.
+    try:
+        state_dir = paths.STATE
+        state_dir.mkdir(parents=True, exist_ok=True)
+        target = state_dir / "providers.json"
+        payload = {"generated_at": time.time(),
+                   "generated_at_iso": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                   "providers": rows}
+        tmp = target.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp.replace(target)
+    except Exception:
+        pass  # publishing is best-effort; the check itself is the gate
+
     # The floor is deliberately 2: one working provider means the fallback
     # chain is a single point of failure.
     floor = 2

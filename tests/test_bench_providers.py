@@ -36,6 +36,18 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+@pytest.fixture(autouse=True)
+def isolated_state(tmp_path, monkeypatch):
+    """No test may publish to the real provider state file.
+
+    check_providers writes the snapshot so the dashboard can read it. Without
+    this, the suite replaces the live dashboard's data with test fixtures
+    (providers named "a", "b" and "ghost") - which is exactly what happened.
+    """
+    monkeypatch.setattr(bench.paths, "STATE", tmp_path / "state")
+    yield
+
+
 @pytest.fixture
 def server():
     srv = HTTPServer(("127.0.0.1", 0), _Handler)
@@ -139,6 +151,26 @@ def test_a_broken_router_does_not_crash_the_gate(tmp_path, monkeypatch):
     checks = bench.check_providers()
     assert not checks[0].passed
     assert "RuntimeError" in checks[0].detail
+
+
+def test_the_check_publishes_the_snapshot(isolated_state, tmp_path, monkeypatch):
+    """The snapshot is what the dashboard reads, so it must be written.
+
+    The router is stubbed: without it this test would probe the live
+    rotation and publish the real providers into the isolated dir.
+    """
+    providers = [
+        {"provider": "a", "model": "m", "status": "healthy", "error": None, "note": ""},
+        {"provider": "b", "model": "m", "status": "healthy", "error": None, "note": ""},
+    ]
+    _fake_router(tmp_path, providers)
+    monkeypatch.setattr(bench.paths, "SCRIPTS_DIR", tmp_path)
+    bench.check_providers()
+    target = bench.paths.STATE / "providers.json"
+    assert target.is_file()
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert len(data["providers"]) == 2
+    assert data["generated_at"] > 0
 
 
 def test_the_check_is_registered_in_the_runner():
