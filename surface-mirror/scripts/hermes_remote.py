@@ -42,6 +42,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import ssl
 import urllib.request
 from pathlib import Path
 
@@ -221,11 +222,36 @@ def tcp_open(host: str, port: int, timeout: float = 3.0) -> bool:
 
 
 def http_get(url: str, timeout: float = 8.0) -> tuple[int, str]:
+    """GET a URL, and speak the scheme the server actually speaks.
+
+    A server that speaks TLS answers a plain HTTP request with a 400
+    that says so, and reporting THAT as the health of the service is a
+    false failure - the service is up and the probe was wrong. The
+    converse is the rule the house already knows: a responding port is
+    not proof of health, and neither is a 400.
+
+    So the scheme is discovered, not assumed. One retry over TLS, with
+    certificate verification off, because the peer is on a private
+    tailnet with a self-signed certificate.
+    """
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             return resp.status, resp.read(4000).decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
-        return exc.code, exc.read(400).decode("utf-8", "replace")
+        body = exc.read(400).decode("utf-8", "replace")
+        if exc.code == 400 and "https" in body.lower() and url.startswith("http://"):
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            try:
+                with urllib.request.urlopen(url.replace("http://", "https://", 1),
+                                            timeout=timeout, context=ctx) as resp:
+                    return resp.status, resp.read(4000).decode("utf-8", "replace")
+            except urllib.error.HTTPError as exc2:
+                return exc2.code, exc2.read(400).decode("utf-8", "replace")
+            except Exception as exc2:
+                return 0, f"{type(exc2).__name__}: {exc2}"
+        return exc.code, body
     except Exception as exc:
         return 0, f"{type(exc).__name__}: {exc}"
 
@@ -287,7 +313,15 @@ def cmd_status(host: dict) -> int:
         if not port:
             continue
         status, body = http_get(f"http://{host['ip']}:{port}/health")
-        print(f"  {port_name:<8}: :{port} -> HTTP {status}  {body[:120]}")
+        if status == 0 and tcp_open(host["ip"], port):
+            # The port is open and nothing answered. That is not the
+            # same claim as "the service is down", and printing HTTP 0
+            # for it reads like a failure the operator has to chase. A
+            # service that speaks TLS on a name-bound certificate will
+            # look exactly like this when it is probed by IP.
+            print(f"  {port_name:<8}: :{port} -> port open, no HTTP answer  {body[:90]}")
+        else:
+            print(f"  {port_name:<8}: :{port} -> HTTP {status}  {body[:120]}")
     return 0
 
 
