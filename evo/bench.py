@@ -9,7 +9,9 @@ a dead service hurts more than a stale doc.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 import os
 import py_compile
 import re
@@ -174,6 +176,62 @@ def check_ollama_api() -> Check:
             pass
     return Check("ollama:tags", "apis", 4.0, ok and models > 0,
                  f"{models} models" if ok else body[:100], time.time() - t0)
+
+def check_providers() -> list[Check]:
+    """Is the model rotation actually able to answer?
+
+    A provider is healthy only if a real request returned the expected content.
+    The estate must not report 100.0/100 while every model provider is dead, so
+    this check probes the live rotation and requires a MINIMUM number of
+    healthy providers - a single survivor is a degraded estate, not a healthy
+    one, because the fallback chain has nothing behind it.
+    """
+    t0 = time.time()
+    router = paths.SCRIPTS_DIR / "provider_router.py"
+    if not router.exists():
+        return [Check("providers:router", "providers", 5.0, False,
+                      f"missing {router}", 0.0)]
+    try:
+        spec = importlib.util.spec_from_file_location("_estate_provider_router", router)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["_estate_provider_router"] = mod
+        spec.loader.exec_module(mod)
+        rows = mod.health(timeout=25)
+    except Exception as e:
+        return [Check("providers:probe", "providers", 5.0, False,
+                      f"{type(e).__name__}: {e}"[:120], time.time() - t0)]
+
+    healthy = [r for r in rows if r.get("status") == "healthy"]
+    blocked = [r for r in rows if r.get("status") == "blocked"]
+    names = ", ".join(r["provider"] for r in healthy) or "none"
+
+    # The floor is deliberately 2: one working provider means the fallback
+    # chain is a single point of failure.
+    floor = 2
+    out = [Check(
+        "providers:rotation", "providers", 6.0, len(healthy) >= floor,
+        f"{len(healthy)}/{len(rows)} healthy (floor {floor}): {names}"
+        + (f"; {len(blocked)} blocked" if blocked else ""),
+        time.time() - t0)]
+
+    # Every provider must be accounted for: healthy, blocked with a reason, or
+    # failed. A provider that silently vanishes from the report is a defect.
+    unaccounted = [r["provider"] for r in rows
+                   if r.get("status") not in ("healthy", "blocked")
+                   and not r.get("error")]
+    out.append(Check(
+        "providers:accounted", "providers", 2.0, not unaccounted,
+        "every provider reports a state" if not unaccounted
+        else f"unaccounted: {', '.join(unaccounted[:5])}",
+        0.0))
+
+    # The rotation must be able to fall back: at least two of the *front* of the
+    # ladder must be alive, or a single failure takes the estate down.
+    out.append(Check(
+        "providers:fallback_depth", "providers", 3.0, len(healthy) >= floor,
+        f"fallback depth {len(healthy)}", 0.0))
+    return out
+
 
 def check_skills() -> list[Check]:
     out: list[Check] = []
@@ -478,7 +536,8 @@ def check_no_published_secrets() -> list[Check]:
 def run() -> Scorecard:
     checks: list[Check] = []
     for fn in (
-        check_services, check_peers, check_nexus_api, check_ollama_api, check_skills,
+        check_services, check_peers, check_nexus_api, check_ollama_api, check_providers,
+        check_skills,
         check_scripts_compile, check_cron, check_config, check_memory,
         check_repos, check_scout, check_learning, check_stack_self,
         check_no_published_secrets,

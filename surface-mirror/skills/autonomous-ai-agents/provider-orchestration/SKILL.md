@@ -76,3 +76,25 @@ never to the rotation.
     pytest E:/ultron-memory/evolution-stack/tests/test_provider_router.py -q
 
 19 tests, isolated local HTTP server, no live provider and no real key.
+
+## The estate gate watches this
+
+`evo/bench.py::check_providers` probes the live rotation and the gate FAILS if
+fewer than 2 providers are healthy. The estate must not report 100.0/100 while
+every model provider is dead.
+
+Three checks, all body-aware:
+
+| Check | Fails when |
+|---|---|
+| `providers:rotation` | fewer than 2 providers are healthy |
+| `providers:accounted` | a provider reports no state and no error |
+| `providers:fallback_depth` | the fallback chain is shallower than 2 |
+
+A blocked provider is a KNOWN state, not a failure: it does not fail the gate,
+it is never rotated into, and it must still be reported. The negative control
+is in the house suite - break the rotation and the gate must drop.
+
+The mirror's contract is the improvable surface only (`hermes/skills` +
+`hermes/scripts`). The router and this skill are mirrored; `evo/bench.py` and
+the tests live in the stack repo and are version-controlled there.
