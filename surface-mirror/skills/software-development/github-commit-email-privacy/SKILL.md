@@ -154,7 +154,7 @@ program, and native git cannot read `/c/...`:
 
 The bare `python` on the bash PATH may not exist - use a full native path.
 
-## Verify through the API, not the local repo
+## Verify EVERY branch through the API, not the local repo
 
     gh api "repos/dqikfox/<repo>/commits?per_page=100" \
       --jq ".[].commit.author.email"
@@ -162,6 +162,22 @@ The bare `python` on the bash PATH may not exist - use a full native path.
 Every line must be `dqikfox@users.noreply.github.com`. Page through the WHOLE
 history, check every branch, and check the remote - a clean local repo proves
 nothing.
+
+**An audit that checks only the default branch is NOT an audit.** Checking
+`master` and `main` across 67 repos reported "0 unlinked local identities"
+while 29 branches across NEXUS, vision and ultron_agent still carried them on
+the remote. vision alone has 173 branches. Use the tool that walks them all:
+
+    python verify_all_branches.py              # every dqikfox repo
+    python verify_all_branches.py dqikfox/vision
+
+It names the offending BRANCH, not just the repo.
+
+**Why the remote kept the old history:** the rewrite fetched the UNREWRITTEN
+remote branches into `refs/heads/` and pushed them straight back. A branch
+that only ever existed on the remote was never in the local ref set, so
+filter-branch never rewrote it, and the push silently republished it. The
+rewrite has to happen against the REMOTE state - see `rewrite_remote.py`.
 
 ## Before rewriting
 
@@ -176,10 +192,23 @@ They live at `C:/Users/KING/AppData/Local/hermes/scripts/git_identity/`:
 
 - `rewrite_local_identities.py` - the selective rewrite (the env-filter, the
   native git, the lease push). Import and call `rewrite(name, repo)`.
+- `rewrite_remote.py` - the CORRECT one when the remote is the thing that
+  must change. It clones the remote into a BARE clone, rewrites every ref
+  there, pushes every branch with an explicit lease, then re-clones the
+  remote and verifies the result. A bare clone has no working tree, so a
+  dirty tree or a filename NTFS cannot recreate cannot block it.
+
+      python rewrite_remote.py vision=https://github.com/dqikfox/vision.git
+
+  Do NOT use a `--mirror` clone for this: it sets `remote.origin.mirror`, and
+  every push then fails with `--mirror can't be combined with refspecs`.
+- `verify_all_branches.py` - audits EVERY branch of EVERY repo and names the
+  offending branch.
 - `rewrite_queue.py` - runs a list of repos from a JSON file. The paths live
   in the FILE, because argv goes through the MSYS argument conversion.
 - `push_all_branches.py` - fetch every remote branch, then push each one
-  with an explicit lease.
+  with an explicit lease. **Careful:** fetching first can republish the
+  UNREWRITTEN remote branches. Use `rewrite_remote.py` instead.
 
     python rewrite_queue.py queue.json
 
