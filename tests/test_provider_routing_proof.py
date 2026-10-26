@@ -37,13 +37,23 @@ PY = r"C:\Users\KING\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe"
 
 # The providers a real request must reach, with the model each one serves.
 # The local ones are free; the hosted ones cost a fraction of a cent.
+#
+# chatgpt rides the Codex CLI, which is a 334 MB binary that reloads its
+# skill set on every start, so it needs a much longer leash than an HTTP
+# provider. The cost is ZERO - it is a flat Plus subscription, not metered
+# API usage.
 TARGETS = [
     ("anthropic", "claude-sonnet-4-6", True),
+    ("chatgpt", "gpt-6-astra", True),
     ("xai", "grok-3", True),
     ("ollama-local", "starscream:latest", True),
     ("nexus", "kimi-k2.6:cloud", True),
     ("ollama-cloud", "minimax-m3.1-flash", True),
 ]
+
+# A CLI-backed provider needs more time than a plain HTTP one.
+TIMEOUTS = {"chatgpt": 600}
+DEFAULT_TIMEOUT = 240
 
 
 def _nonce() -> str:
@@ -58,8 +68,8 @@ def _call(provider: str, nonce: str) -> dict:
         [PY, ROUTER_PATH, "chat",
          "Reply with exactly this token and nothing else: " + nonce,
          "--provider", provider, "--json"],
-        capture_output=True, text=True, timeout=240, env=env,
-        encoding="utf-8", errors="replace")
+        capture_output=True, text=True, timeout=TIMEOUTS.get(provider, DEFAULT_TIMEOUT),
+        env=env, encoding="utf-8", errors="replace")
     out = (r.stdout or "").strip()
     start = out.find("{")
     assert start >= 0, "the router returned no JSON: %s" % out[:200]
