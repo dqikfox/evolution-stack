@@ -44,6 +44,25 @@ records what each provider actually did.
   proves nothing. Probe with `Reply with exactly: ORCHESTRA OK`.
 - **A key that cannot pay is BLOCKED, not FAILED.** Keep it out of the
   rotation; do not retry it on every call.
+- **A vault outage must not change a provider's verdict.** "The credential
+  does not exist" and "the vault would not answer" are different facts. If
+  the vault read swallows its errors and returns nothing, a 30-second 1Password
+  rate limit silently reclassifies a working provider as broken - and the
+  router, still needing an Authorization header, sends a placeholder to a
+  hosted API, which answers `invalid_api_key`. The failure then looks like
+  bad credentials when it is really a busy vault. Raise a distinct
+  `VaultUnavailable`, report it as its own status, and keep the last state
+  the provider was actually SEEN in.
+- **Never send a placeholder credential to a hosted API.** The `nexus-local`
+  placeholder exists for the local NEXUS proxy and nowhere else. A hosted
+  endpoint that receives it answers `invalid_api_key`, which reads as a
+  credential problem rather than the missing-credential problem it is.
+- **Cache the resolved secret with DPAPI (CurrentUser scope).** A vault
+  outage degrades a provider; it does not change what the provider IS. The
+  plaintext never touches the disk and never appears on a command line.
+- **Only a real response may update the last-known record.** If an
+  infrastructure failure could write to that record, the next outage would
+  read back its own state as if the provider had been seen in it.
 - **A dead first fallback is worse than no first fallback.** Order the rotation
   by verified liveness, not by name or by preference.
 - **Price a call by its MODEL, not its provider tier.** A per-model price
