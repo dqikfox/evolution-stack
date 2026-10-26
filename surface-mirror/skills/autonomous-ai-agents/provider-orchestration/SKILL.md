@@ -28,14 +28,51 @@ records what each provider actually did.
 | Provider | Model | Endpoint | State |
 |---|---|---|---|
 | anthropic | claude-sonnet-4-6 | api.anthropic.com | working, ~1.2s |
+| chatgpt | gpt-6-astra | the Codex CLI (ChatGPT Plus) | working, ~9-30s, $0 marginal |
 | xai | grok-3 | api.x.ai | working, ~3s |
 | nexus | kimi-k2.6:cloud | 127.0.0.1:8650/v1 | working, local, free |
 | ollama-cloud | minimax-m3.1-flash | ollama.com/v1 | working, ~1.3s |
 | ollama-local | starscream:latest | 127.0.0.1:11434 | working, free, 64K |
 | openai | gpt-5.5 | api.openai.com | BLOCKED - no credits |
-| openai-codex | gpt-5.5 | chatgpt.com backend | BLOCKED - no Codex entitlement |
 | copilot | gpt-4o | api.githubcopilot.com | BLOCKED - not licensed |
 | openrouter | claude-opus-4.8 | openrouter.ai | BLOCKED - no key exists |
+
+## ChatGPT rides the CLI, not the HTTP API
+
+The ChatGPT Plus account IS entitled, and the token says so:
+`chatgpt_plan_type: plus`. Every direct HTTP probe said otherwise:
+
+- `chatgpt.com/backend-api/codex/models` -> HTTP 200, `{"models":[]}`. An
+  empty list here proves nothing.
+- `/backend-api/codex/responses` with any model -> "the 'X' model is not
+  supported when using Codex with a ChatGPT account".
+- `/backend-api/conversation` -> 403 Cloudflare HTML. A browser-like header
+  set (User-Agent, Origin, sec-ch-ua, Sec-Fetch-*) gets past it, and then
+  it answers 422 "Invalid conversation body".
+
+What works is the Codex CLI's own session, `~/.codex/auth.json`
+(`auth_mode: chatgpt`). The CLI knows the endpoint, the headers and the body
+shape, and it refreshes the OAuth token itself.
+
+**Two binaries, and the version matters.** `.sandbox-bin/codex.exe` is
+0.149.0 and refuses the current models with "requires a newer version of
+Codex" - a message that looks like an entitlement problem but is not.
+`plugins/.plugin-appserver/codex.exe` is 0.162.0 and serves them.
+
+The router's `chatgpt` provider therefore has `kind="codex"` and its own
+transport. Rules that came with it:
+
+- **The CLI owns the OAuth session.** The router must never parse
+  `~/.codex/auth.json`. No token is read, logged, or placed on a command
+  line. A test walks the AST and fails if the router reads that path.
+- **The CLI needs its own timeout (300s), not the 90s HTTP default.** It is a
+  334 MB binary that reloads its skill set every start. With the default
+  leash a working provider was reported dead.
+- **A flat subscription is not metered usage.** ChatGPT is priced at $0.00
+  marginal cost, because that is what it is to the house. Pricing it like
+  metered API usage would invent a cost that does not exist.
+- **Entitlement cannot be judged from a models list.** Before declaring a
+  provider blocked, try the client that owns the credential.
 
 ## Proving the rotation (do it this way)
 
@@ -96,7 +133,12 @@ against its own provider with its own latency, tokens and cost.
   table looked up by provider name silently records every paid call as free.
 - **An OAuth token can authenticate and still have no entitlement.** A clean
   error naming the model means the account cannot answer, not that the token
-  is bad.
+  is bad. The converse also holds: a token CAN be entitled while every
+  endpoint it can reach says it is not. ChatGPT Plus was "blocked" on
+  four separate HTTP probes and was working the whole time.
+- **The client version can masquerade as an entitlement failure.** "This
+  model requires a newer version of Codex" is a stale binary, not a
+  subscription problem. Check the client before the plan.
 - **The same env var can serve two targets.** `OPENAI_API_KEY` holds the
   literal placeholder `nexus-local`, which is right for the NEXUS proxy and
   wrong for api.openai.com.

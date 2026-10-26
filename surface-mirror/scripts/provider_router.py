@@ -35,6 +35,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -90,11 +91,6 @@ class Provider:
 # now. They are reported, never rotated into, and never retried on every call.
 # Verified 2026-10-26.
 BLOCKED: list[dict] = [
-    {"provider": "openai-codex", "model": "gpt-5.5", "status": "blocked",
-     "reason": "The ChatGPT OAuth token authenticates but the account has NO entitled Codex "
-               "models - /backend-api/codex/models returns an empty list and every model name "
-               "is rejected with 'not supported when using Codex with a ChatGPT account'.",
-     "unblock": "A ChatGPT plan with Codex entitlement."},
     {"provider": "copilot", "model": "gpt-4o", "status": "blocked",
      "reason": "The GitHub token is valid but the account is 'not licensed to use Copilot'.",
      "unblock": "A GitHub Copilot licence on the account behind the gh token."},
@@ -133,6 +129,14 @@ REGISTRY: list[Provider] = [
     Provider("ollama-local", "ollama", "http://127.0.0.1:11434", "starscream:latest",
              cost_tier="local", priority=60, local=True,
              note="The local 3090. Free, offline, 64K context."),
+    Provider("chatgpt", "codex", "", "gpt-6-astra",
+             cost_tier="chatgpt", priority=25, local=True,
+             note="ChatGPT Plus via the Codex CLI's OAuth session "
+                  "(~/.codex/auth.json, auth_mode: chatgpt). No API key and no credit "
+                  "balance - it rides the Plus subscription. The CLI, not the raw "
+                  "HTTP API: the OAuth token is scoped for the Codex backend, and "
+                  "the plain /backend-api/codex/models endpoint returns an empty "
+                  "list even for an entitled account."),
 ]
 
 
@@ -274,6 +278,10 @@ def vault_secret(title: str, field: str = "credential") -> str | None:
 def resolve_key(p: Provider) -> str | None:
     """The credential for a provider. Raises VaultUnavailable if the vault
     would not answer - never silently returns None for that reason."""
+    if p.kind == "codex":
+        # ChatGPT rides the Codex CLI's own OAuth session. There is no API
+        # key to resolve, and the vault must not be consulted for it.
+        return None
     if p.key_env:
         v = win_env(p.key_env)
         if v:
@@ -286,6 +294,78 @@ def resolve_key(p: Provider) -> str | None:
 
 
 # ---------------------------------------------------------------- transport
+
+# The Codex CLI that carries the ChatGPT Plus OAuth session. The newer
+# plugin-appserver build is the one that can serve the current model names;
+# the older .sandbox-bin build refuses them with "requires a newer version
+# of Codex".
+CODEX_BIN = r"C:\Users\KING\.codex\plugins\.plugin-appserver\codex.exe"
+CODEX_BIN_FALLBACK = r"C:\Users\KING\.codex\.sandbox-bin\codex.exe"
+
+# The CLI is slow to start (334 MB binary + skill loading + session store).
+# A healthy ChatGPT call takes 8-30s once warm, but a cold start with a full
+# context load has been measured at 68s. 300s leaves headroom without
+# letting a genuinely dead provider stall the whole health sweep.
+CODEX_TIMEOUT = 300
+
+
+def _codex_call(p: Provider, prompt: str, timeout: int):
+    """One real request to ChatGPT through the Codex CLI.
+
+    Returns (text, meta_updates). The CLI refreshes the OAuth token itself,
+    so no secret is read, logged or passed on a command line here.
+    """
+    meta: dict = {"http": None, "error": None, "tokens_in": 0, "tokens_out": 0}
+    binary = CODEX_BIN if Path(CODEX_BIN).is_file() else CODEX_BIN_FALLBACK
+    if not Path(binary).is_file():
+        meta["error"] = "the Codex CLI is not installed"
+        return "", meta
+
+    # --json gives a JSONL event stream; the last agent_message holds the
+    # answer and token_count holds the usage. --output-last-message writes
+    # the final message to a file, which is the most reliable extraction.
+    with tempfile.TemporaryDirectory() as tmp:
+        last = Path(tmp) / "last.txt"
+        cmd = [binary, "exec", "--skip-git-repo-check", "--sandbox", "read-only",
+               "--ephemeral", "--json", "-m", p.model,
+               "-o", str(last), prompt]
+        env = dict(os.environ)
+        # The child must not inherit a foreign Python/virtualenv state.
+        for k in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "VIRTUAL_ENV"):
+            env.pop(k, None)
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                               env=env, encoding="utf-8", errors="replace")
+        except subprocess.TimeoutExpired:
+            meta["error"] = "timeout after %ss" % timeout
+            return "", meta
+
+        if r.returncode != 0 and not last.is_file():
+            err = (r.stderr or r.stdout or "").strip()
+            meta["error"] = (err.splitlines()[-1][:160] if err else "codex rc=%s" % r.returncode)
+            return "", meta
+
+        text = last.read_text(encoding="utf-8", errors="replace").strip() if last.is_file() else ""
+        if not text:
+            # Fall back to the JSONL stream.
+            for line in (r.stdout or "").splitlines():
+                try:
+                    ev = json.loads(line)
+                except Exception:
+                    continue
+                if ev.get("type") == "item.completed" and ev.get("item", {}).get("type") == "agent_message":
+                    text = str(ev["item"].get("text", "")).strip()
+                usage = ev.get("usage") or (ev.get("item") or {}).get("usage")
+                if isinstance(usage, dict):
+                    meta["tokens_in"] = usage.get("input_tokens", meta["tokens_in"])
+                    meta["tokens_out"] = usage.get("output_tokens", meta["tokens_out"])
+
+        if not text:
+            meta["error"] = "the Codex CLI returned no message"
+            return "", meta
+        meta["http"] = 200
+        return text, meta
+
 
 def _post(url: str, payload: dict, headers: dict, timeout: int):
     req = urllib.request.Request(
@@ -375,6 +455,20 @@ def call(p: Provider, prompt: str, max_tokens: int = 256, timeout: int = 120):
         meta["tokens_in"] = body.get("prompt_eval_count", 0)
         meta["tokens_out"] = body.get("eval_count", 0)
 
+    elif p.kind == "codex":
+        # ChatGPT Plus, through the Codex CLI's OAuth session.
+        #
+        # The raw HTTP path does NOT work for this credential: the token is
+        # scoped for the Codex backend, /backend-api/codex/models returns an
+        # empty list even for an entitled account, and every direct model name
+        # is refused. The CLI knows the right endpoint, headers and body
+        # shape, and it refreshes the OAuth token itself.
+        codex_text, codex_meta = _codex_call(p, prompt, timeout)
+        meta.update(codex_meta)
+        if meta.get("error"):
+            raise RuntimeError(meta["error"])
+        text = codex_text
+
     else:
         raise RuntimeError("unknown provider kind %r" % p.kind)
 
@@ -385,8 +479,10 @@ def call(p: Provider, prompt: str, max_tokens: int = 256, timeout: int = 120):
     meta["elapsed"] = round(time.time() - t0, 2)
     tin, tout = meta.get("tokens_in", 0), meta.get("tokens_out", 0)
     # PRICE is keyed by MODEL. A local model and the Ollama Cloud tier are free
-    # to the house. Everything else is priced by its model name.
-    if p.cost_tier in ("local", "ollama-cloud"):
+    # to the house. ChatGPT is a flat Plus SUBSCRIPTION, so its marginal
+    # per-token cost to the house is zero until the seat limit is hit -
+    # it must never be priced as if it were metered API usage.
+    if p.cost_tier in ("local", "ollama-cloud", "chatgpt"):
         pin, pout = 0.0, 0.0
     else:
         pin, pout = PRICE.get(p.model, PRICE.get(p.cost_tier, (0.0, 0.0)))
@@ -424,6 +520,11 @@ def probe(p: Provider, timeout: int = 90) -> dict:
     """A provider is healthy only if a real request returns real content."""
     out = {"provider": p.name, "model": p.model, "status": "unknown", "elapsed": None,
            "error": None, "cost_tier": p.cost_tier, "note": p.note, "priority": p.priority}
+    # The Codex CLI is a 334 MB binary that loads its skill set and its
+    # session store on every start, so it needs a much longer leash than a
+    # plain HTTP provider. A 90s timeout would call a working provider dead.
+    if p.kind == "codex":
+        timeout = max(timeout, CODEX_TIMEOUT)
     try:
         text, meta = call(p, "Reply with exactly: ORCHESTRA OK", max_tokens=24, timeout=timeout)
         ok = "ORCHESTRA OK" in text
@@ -548,7 +649,9 @@ def route(prompt: str, only: str | None = None, model: str | None = None,
     attempts = []
     for p in cands:
         try:
-            text, meta = call(p, prompt, max_tokens, timeout)
+            # The Codex CLI needs its own leash, not the HTTP default.
+            p_timeout = max(timeout, CODEX_TIMEOUT) if p.kind == "codex" else timeout
+            text, meta = call(p, prompt, max_tokens, p_timeout)
             record(meta)
             meta["attempts"] = attempts
             return text, meta
