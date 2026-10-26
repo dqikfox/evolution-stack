@@ -142,6 +142,14 @@ The real proof, and it is a permanent test
 Then check the ledger: `provider_router.py stats`. Each call is recorded
 against its own provider with its own latency, tokens and cost.
 
+## The local Ollama tag matters
+
+`starscream:latest` and `starscream-64k:latest` are the SAME weights with a different `num_ctx` - 128000 against 65536. Ollama runs a **separate server process for each**, so asking for one while the other is resident means an EIGHTEEN GIGABYTE second copy of the same model. On THRONE, already at 98% memory with 20 GB swapped out, that copy is what tips the machine into thrashing.
+
+Point the local provider at the tag that is actually resident. It is also the one that satisfies the standing rule that no model the user interacts with may have a context below 64K.
+
+**A local cold start needs a realistic allowance.** 45s was enough for a small model; it is not enough to load 18 GB of weights with a 64K context on a host that is also swapping. A timeout there reports a failed provider when the provider was merely cold, and a false failure is worse than a slow answer. The house floor is 45s; the truth for this model is 120.
+
 ## The rules that earned their place
 
 - **A provider is healthy only if a real request returned the expected

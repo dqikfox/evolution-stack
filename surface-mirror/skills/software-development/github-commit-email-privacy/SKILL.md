@@ -102,6 +102,22 @@ success while changing nothing. **Always verify the count changed**, and
 prove the filter on a throwaway repo with one local, one bot and one dqikfox
 commit BEFORE touching a real repo.
 
+## A rewrite must keep the history CONNECTED
+
+`git filter-branch` re-creates every commit it walks, and it cannot re-sign a GPG-signed commit, so it drops the signature - the commit's SHA changes even when the author, committer, tree, dates and message are all identical.
+
+On a signed repository that leaves the rewritten history with NO common ancestor with the original. `git merge-base` between the old and the new tip is empty, git's push negotiation has nothing to negotiate against, and the push has to carry the WHOLE repository. On dqikfox/faraday that was 1,177 MB for a branch that had nothing to fix, and the pack builder crawled for 40 minutes at 0% CPU.
+
+**The rule: a commit whose metadata is unchanged AND whose parent is unchanged IS the same object. Reuse it.** Only a commit that needs a new identity, or that sits below one that does, gets a new object.
+
+With that rule the shared ancestors keep their SHAs, the old and the new history still share a common base, and the push carries a delta. Measured on faraday: 188 commits reused, 85 re-created, and the pack fell from 1,177 MB to 128 MB.
+
+Use `rewrite_keep_history.py`, not `filter-branch`. `rewrite_remote.py` calls it.
+
+**A branch that never had a local identity must not be pushed at all.** faraday's `main` was 94 third-party commits with no local identity in it; rewriting and pushing it was pure waste.
+
+**Diagnose with `git merge-base <old-tip> <new-tip>`.** An empty result means the history is disjoint and the push will be a whole-repository upload. A non-empty result means the push is a delta.
+
 ## After the rewrite - what filter-branch leaves behind
 
 1. **It removes the `origin` remote.** Re-add it and fetch:
