@@ -222,6 +222,14 @@ def cmd_apply(args) -> int:
     archive.set_status(v["id"], "rejected", after.gate_score)
     print(f"REJECTED ({after.gate_score - before.gate_score:+.2f}) — rolling back {snap}")
     try:
+        # The rejected variant's own file must be REMOVED. Restoring the
+        # snapshot is additive, so it never deletes anything: without this
+        # the rejected artefact stays in skills/, gets published by the
+        # mirror like a real skill, and the next cycle finds it and tries
+        # the same rejected idea again.
+        removed = _remove_rejected_target(v["target"])
+        if removed:
+            print(f"removed the rejected variant's file: {removed}")
         r = snapshot.restore(snap)
         confirm = bench.run()
         archive.record_benchmark(confirm.gate_score, len(confirm.checks), len(confirm.gate_failures), confirm.to_dict())
@@ -230,6 +238,26 @@ def cmd_apply(args) -> int:
         print(f"ROLLBACK FAILED: {e} — manual restore required from {snap}")
         return 2
     return 1
+
+
+def _remove_rejected_target(target: str) -> str:
+    """Delete the file a rejected variant created. Returns the path, or ''.
+
+    Only the variant's OWN target is touched. A rollback must not reach into
+    the rest of the surface: the snapshot restore below is additive, and a
+    file that was added to the surface after the snapshot was taken is a
+    legitimate concurrent edit, not a leftover of the rejected variant.
+    """
+    if not target:
+        return ""
+    dest = paths.HERMES / target
+    try:
+        if dest.is_file():
+            dest.unlink()
+            return str(dest)
+    except OSError as exc:
+        print(f"could not remove the rejected file {dest}: {exc}")
+    return ""
 
 
 # --------------------------------------------------------------- rollback ---

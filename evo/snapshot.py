@@ -71,7 +71,18 @@ def list_snapshots() -> list[dict]:
 
 
 def restore(snapshot_id: str) -> dict:
-    """Restore the surface from a snapshot. Destructive by design — it is a rollback."""
+    """Restore the surface from a snapshot. Destructive by design — it is a rollback.
+
+    The restore is ADDITIVE: it copies the snapshot's files over the live
+    surface but never deletes anything. That is deliberate for the files the
+    snapshot holds, and it is why a file that was ADDED to the surface after
+    the snapshot was taken survives a rollback — the snapshot simply does not
+    mention it.
+
+    The one file that must not survive is the rejected variant's own target.
+    That is removed by the caller (evo.loop._remove_rejected_target) before
+    this runs, because the restore cannot know which file it was.
+    """
     z = paths.SNAPSHOTS / f"{snapshot_id}.zip"
     if not z.exists():
         raise FileNotFoundError(f"no snapshot {snapshot_id}")
