@@ -73,6 +73,25 @@ transport. Rules that came with it:
   metered API usage would invent a cost that does not exist.
 - **Entitlement cannot be judged from a models list.** Before declaring a
   provider blocked, try the client that owns the credential.
+- **The prompt goes on STDIN, never on the command line.** A Windows command
+  line is capped at 32,767 characters. The prompt used to be an argument to
+  `codex exec`, so a long prompt failed the whole call with
+  `FileNotFoundError [WinError 206]` before the request was ever made - and
+  the failure looked like a crash, not a length limit. `codex exec -` reads
+  the instructions from stdin, which has no such limit. This applies to the
+  worker too, not just the router.
+- **The last line of stderr is not the reason.** A Codex run's stderr is full
+  of unrelated noise - a stale MCP server can log a fatal 404 there - so
+  taking its last line reported "404" for a provider that was really out of
+  plan quota. The reason is in the event stream: read the `turn.failed`
+  event, not the noise.
+- **A plan cap is BLOCKED, not FAILED.** "You've hit your usage limit" means
+  the credential is valid and the subscription is real, but the plan will not
+  serve more right now. A RATE limit is deliberately NOT blocked - that one
+  is transient. And a caller that asked for JSON always gets JSON, with the
+  per-provider attempts attached, because a bare line on stderr leaves the
+  routing proof, the review rotation and the panel unable to tell a quota
+  from a defect.
 
 ## Giving ChatGPT a task, not just a question
 
@@ -210,6 +229,20 @@ its isolation from the production state.
 and they are the only thing that actually proves the rotation reaches
 several different models. Do not mock them, and do not weaken the nonce
 check: a mocked version would prove exactly nothing.
+
+A provider that is QUOTA-CAPPED right now makes its case SKIP with the
+reason printed, not FAIL: a plan cap is a current condition, not a defect
+in the integration, and the entitlement proof and the transport are still
+real. The skip must not hollow the proof out - at least three providers
+must really have served, or the "different models" claim is not being
+tested at all.
+
+    pytest E:/ultron-memory/evolution-stack/tests/test_provider_codex_stdin.py -q
+
+4 tests that prove the Codex transport WITHOUT a provider. A stub binary
+stands in for the Codex CLI, so the transport is verified even while a
+quota is exhausted. It is the right shape for this: putting the old
+command-line line back makes it fail with the exact `WinError 206`.
 
 ## The estate gate watches this
 
