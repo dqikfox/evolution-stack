@@ -103,6 +103,7 @@ def check_services() -> list[Check]:
     - retired services are not checked at all (no implementation = no failure)
     - services with a documented start path are gate-actionable (healable)
     - services without one stay on the host score (operator action)
+    - a service in a MAINTENANCE WINDOW is neither: it is down on purpose
     """
     out: list[Check] = []
     for s in services.load():
@@ -115,6 +116,15 @@ def check_services() -> list[Check]:
         detail = f":{s.port} {st}"
         if not up:
             detail += " — healable (documented start path)" if s.healable else " — operator-level"
+        # A maintenance window is a deliberate outage. NEXUS CORE holds
+        # the vector index in a SQLite file that the server keeps open,
+        # so a rebuild cannot run beside it - the rebuild takes the
+        # server down on purpose, and the launcher refuses to bring it
+        # back until the rebuild is done. The service being down is the
+        # maintenance working, not a failure of the estate.
+        if not up and _in_maintenance_window(s):
+            gate = False
+            detail += " — maintenance window (a rebuild holds the lock)"
         out.append(Check(
             name=f"service:{s.name}", group="services", weight=4.0, passed=up,
             detail=detail, elapsed=time.time() - t0, scored=gate,
@@ -127,6 +137,17 @@ def check_services() -> list[Check]:
         elapsed=time.time() - t0,
     ))
     return out
+
+
+def _in_maintenance_window(s) -> bool:
+    """True when a rebuild lock says this service is down on purpose."""
+    if s.name != "nexus":
+        return False
+    lock = Path(r"E:\ultron-memory\nexus-core\data\REBUILD.lock")
+    try:
+        return lock.exists()
+    except OSError:
+        return False
 
 
 def check_peers() -> list[Check]:
