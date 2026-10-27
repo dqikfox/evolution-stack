@@ -343,6 +343,14 @@ def main() -> int:
         if cov is None:
             check(False, "the index coverage tool ran")
         else:
+            # The health payload's chroma count is informational and is
+            # occasionally absent in the moments right after a restart,
+            # when the component is still warming. It is never the
+            # assertion: coverage is computed from the collection's own
+            # ids, so it does not depend on what /health chooses to
+            # report.
+            reported = ("health reports %s vectors" % vectors) if vectors else \
+                "health did not report a vector count (informational only)"
             check(
                 cov.get("notes_with_missing_chunks") == 0
                 and cov.get("notes_fully_covered") == cov.get("notes_in_db")
@@ -350,7 +358,7 @@ def main() -> int:
                 "the index survived the restart "
                 f"({cov.get('notes_fully_covered')}/{cov.get('notes_in_db')} notes covered, "
                 f"{cov.get('chunk_ids_present')}/{cov.get('expected_chunk_ids')} chunk ids present, "
-                f"health reports {vectors} vectors)",
+                f"{reported})",
             )
     else:
         check(False, "health endpoint answered")
