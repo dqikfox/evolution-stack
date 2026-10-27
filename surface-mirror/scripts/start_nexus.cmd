@@ -50,6 +50,35 @@ REM The marker is the supervisor's script name. The house tooling
 REM recognises a supervisor by a command line that ENDS with it, and a
 REM leftover child by the marker appearing anywhere in the command line.
 set NEXUS_MARKER=run_nexus.py
+REM A rebuild of the vector index takes the database and the Chroma
+REM collection offline for a while. Starting the server during a rebuild
+REM deadlocks the two processes against each other: the server holds
+REM chroma.sqlite3 open, the rebuild blocks on the server's connection,
+REM and the server's own reads block on the rebuild's write transaction.
+REM That is what happened on 2026-10-27 and it cost the knowledge base
+REM an hour.
+REM
+REM So the rebuild drops a lock file, and this launcher - the ONE
+REM canonical start path, so every caller is covered - refuses to start
+REM while it is there. The service healer, the five-minute health job
+REM and a human running this by hand all get the same answer.
+set NEXUS_REBUILD_LOCK=%NEXUS_PROJECT%\data\REBUILD.lock
+
+REM --- 0. A REBUILD IN PROGRESS WINS. Checked before anything else.
+REM
+REM This uses goto rather than an `if exist (...)` block on purpose. A
+REM parenthesised block ends at the first unbalanced `)`, so a path like
+REM %NEXUS_REBUILD_LOCK% - which ends in a directory and a file name -
+REM inside the block's own parentheses terminates the block early and
+REM cmd fails with "was unexpected at this time". A goto has no such
+REM parsing rules.
+if not exist "%NEXUS_REBUILD_LOCK%" goto :nexus_no_rebuild
+echo [nexus] a vector index rebuild is in progress: %NEXUS_REBUILD_LOCK%
+echo [nexus] refusing to start the server - it would deadlock the rebuild.
+echo [nexus] the rebuild clears the lock when it finishes.
+echo [nexus] the launcher will bring the service up on the next call.
+exit /b 0
+:nexus_no_rebuild
 
 REM --- 1. DEPENDENCIES FIRST. Nothing is destroyed before this block passes.
 if not exist "%NEXUS_VENV%" (
