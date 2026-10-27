@@ -45,28 +45,31 @@ START_BUDGET_S = 120
 # and not nexus-core/.venv - the launcher pins this one.
 NEXUS_PY = Path(r"C:\Users\KING\.cache\nexus-venv\Scripts\python.exe")
 COVERAGE_TOOL = ROOT / "tools" / "index_coverage.py"
+COVERAGE_URL = "http://127.0.0.1:8650/api/index/coverage"
 
 
 def index_coverage() -> dict | None:
-    """Run the index coverage tool and return its report.
+    """Ask the running service for the coverage of its vector index.
 
-    The coverage tool lives with the project it measures, and the
-    contract asks it rather than reimplementing the chunk-id maths.
-    Returns None when the tool cannot run at all.
+    The coverage is measured INSIDE the server, with the Chroma
+    connection the server already owns. A tool that measures the index
+    from outside has to open the same Chroma SQLite file a second
+    time, and the service has been wedged by exactly that contention
+    before - the server holds data/chroma/chroma.sqlite3 open for its
+    whole lifetime, and a second process touching it is the hazard the
+    estate's own lessons record.
+
+    nexus-core/tools/index_coverage.py is the offline equivalent, for
+    when the service is deliberately down.
+
+    Returns None when the service cannot answer.
     """
-    if not COVERAGE_TOOL.exists() or not NEXUS_PY.exists():
-        return None
     try:
-        res = subprocess.run(
-            [str(NEXUS_PY), str(COVERAGE_TOOL), "--json"],
-            capture_output=True, text=True, timeout=300, cwd=str(ROOT),
-        )
-    except Exception:
-        return None
-    if res.returncode not in (0, 1):
-        return None
-    try:
-        return json.loads(res.stdout)
+        import urllib.request
+        with urllib.request.urlopen(COVERAGE_URL, timeout=120) as resp:
+            if resp.status != 200:
+                return None
+            return json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
 
