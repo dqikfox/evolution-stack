@@ -359,14 +359,32 @@ def check_evolution_recent_success() -> Check:
     if not files:
         c.error = "no evolution output files"
         return record(c)
-    text = files[-1].read_text(encoding="utf-8", errors="ignore")
+    # The NEWEST by NAME, not by mtime. The cron runner names each output
+    # <timestamp>.md, so the name sorts chronologically and cannot be
+    # confused by a file being written while this check reads the
+    # directory. Sorting by mtime picked the previous run when the newest
+    # one was still being flushed, and the check then reported the estate
+    # as regressed on the strength of a stale score.
+    newest = sorted(files, key=lambda p: p.name)[-1]
+    text = newest.read_text(encoding="utf-8", errors="ignore")
     import re
-    m = re.search(r"SCORE:\s*([0-9.]+)", text)
-    score = float(m.group(1)) if m else -1.0
+    # The run reports several scores in sequence: "SCORE: 97.12 -> 97.12"
+    # (the measured delta), then "GATE SCORE: 100.0" and "HOST SCORE:
+    # 100.0". A naive "SCORE:" search matches the FIRST of those - the
+    # BEFORE value of the delta - so a run that finished at 100 read as the
+    # older 97.12 and the estate looked regressed. The authoritative value
+    # is the final GATE SCORE, so match that specifically, and fall back to
+    # the last bare SCORE: only if there is no explicit gate score.
+    gate = re.search(r"GATE SCORE:\s*([0-9.]+)", text)
+    if gate:
+        score = float(gate.group(1))
+    else:
+        all_scores = re.findall(r"SCORE:\s*([0-9.]+)", text)
+        score = float(all_scores[-1]) if all_scores else -1.0
     failures = re.search(r"(\d+)\s+failures", text)
     nfail = int(failures.group(1)) if failures else None
     c.ok = score >= 100.0 and (nfail in (0, None))
-    c.detail = f"{files[-1].name} score={score} failures={nfail}"
+    c.detail = f"{newest.name} score={score} failures={nfail}"
     if not c.ok:
         c.error = f"score={score} failures={nfail}"
     return record(c)
