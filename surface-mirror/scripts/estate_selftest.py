@@ -377,8 +377,13 @@ def _benign_doctor_findings(out: str) -> int:
     """How many of the doctor's findings are history rather than faults."""
     benign = 0
     low = out.lower()
-    if "catch-up after missed fire" in low and "clears at the next on-time fire" in low:
-        benign += 1
+    # A catch-up fire is not a fault - the doctor says so itself: the
+    # warning clears at the next on-time fire. It is counted by
+    # OCCURRENCE, not by presence: the doctor reports one finding per
+    # job, so three jobs that fired late are three findings, and
+    # subtracting a single one left two standing and failed the gate
+    # for a warning the doctor had already labelled as temporary.
+    benign += low.count("catch-up after missed fire")
     # A "last run failed" for a job that has since been closed out and
     # is healthy again.
     closed = _closed_incident_times()
@@ -453,7 +458,8 @@ def check_recent_executions_ok() -> Check:
         con = sqlite3.connect(f"file:{CRON_DB}?mode=ro", uri=True)
         rows = con.execute(
             "select job_id,status,started_at,error,id from executions "
-            "where started_at > ? and status != 'completed' order by started_at desc limit 6",
+            "where started_at > ? and status not in ('completed','running') "
+            "order by started_at desc limit 6",
             (_since(0.75),),
         ).fetchall()
         # Closed incidents, per job. The incident's error_sig is NOT the
