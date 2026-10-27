@@ -190,6 +190,64 @@ def _run_body(was_up: bool) -> int:
     record("comfyui_released_model", comfy.get("free_memory") is not False or True,
            f"state={comfy}")
 
+    # ── Z-Image Turbo ──────────────────────────────────────────────────────
+    #
+    # The checkpoint path above uses SD 1.5, which is the only single-file
+    # checkpoint this host had. Z-Image Turbo is a far better model and it
+    # is installed - three files, a diffusion model plus a Qwen3-4B text
+    # encoder plus a VAE, loaded through three separate nodes rather than
+    # as one checkpoint. It is checked here so the estate's own harness
+    # knows the better backend works, and so a partial install is caught
+    # before something depends on it.
+    try:
+        import zimage
+    except Exception as exc:  # noqa: BLE001
+        record("zimage_module_import", False, f"{type(exc).__name__}: {exc}")
+        return 0
+
+    zstatus = zimage.zimage_status()
+    record("zimage_installed", bool(zstatus.get("available")),
+           f"missing={zstatus.get('missing')}")
+    if not zstatus.get("available"):
+        # Not installed is not a failure of the estate - the checkpoint
+        # backend still works. It is reported and the run continues.
+        return 0
+
+    zout = SCRATCH / "z_image_turbo_test.png"
+    zout.parent.mkdir(parents=True, exist_ok=True)
+    if zout.exists():
+        zout.unlink()
+
+    zprompt = ("a lighthouse on a rocky cliff at dusk, dramatic storm clouds, "
+               "warm lighthouse beam cutting through sea spray, cinematic lighting")
+    zstarted = time.time()
+    try:
+        zresult = zimage.generate_zimage(
+            prompt=zprompt, output_path=str(zout),
+            width=1024, height=1024, seed=20261028)
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        record("zimage_generate", False, f"{type(exc).__name__}: {exc}")
+        return 0
+    zelapsed = time.time() - zstarted
+
+    zok = bool(zresult.get("ok")) if isinstance(zresult, dict) else False
+    record("zimage_generate", zok, f"{zelapsed:.0f}s detail={str(zresult)[:150]}")
+    if not zok:
+        return 0
+
+    zexists = zout.is_file()
+    zsize = zout.stat().st_size if zexists else 0
+    zdims = _png_size(zout) if zexists else None
+    record("zimage_png_written", zexists and zsize > 10_000, f"{zout} ({zsize} bytes)")
+    record("zimage_png_is_valid",
+           zdims is not None and zdims[0] > 0 and zdims[1] > 0,
+           f"dimensions={zdims}")
+    if zdims:
+        record("zimage_png_has_real_content", zsize > 20_000,
+               f"{zsize} bytes for {zdims[0]}x{zdims[1]}")
+
     # ComfyUI is stopped again only when this test started it - but that
     # happens in main()'s finally, on every exit path, not only here.
     # The pass count is computed in main(), AFTER that finally, so the
