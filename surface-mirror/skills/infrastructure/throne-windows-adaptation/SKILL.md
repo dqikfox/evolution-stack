@@ -136,6 +136,29 @@ Net effect: `Stop-Process -Name ollama,llama-server -Force` clears VRAM, but wit
 
 **The reliable pattern before long-running GPU work (training, eval sweep, soak test):**
 
+The watchdog MUST come back. A disabled watchdog is an estate with no
+independent recovery layer, and the estate gate now FAILS while it is
+disabled - so a forgotten disable does not stay quiet. But a gate that
+fails at 3am is not a recovery plan either. Restore it structurally,
+inside a `try/finally`, so an interrupted run still puts it back:
+
+```powershell
+# The watchdog is disabled ONLY for the duration of the GPU work, and it
+# is restored on every exit path - success, failure, or interruption.
+$wd = Get-ScheduledTask THRONE_Watchdog_5min
+try {
+    $wd | Disable-ScheduledTask
+    # ... the long-running GPU work ...
+}
+finally {
+    $wd | Enable-ScheduledTask
+}
+```
+
+If the work must run detached from this session, write the enable into
+the worker's own shutdown path. A disable without a restore is a fault
+waiting for the next unattended hour.
+
 ```powershell
 # 1. Disable the watchdog so it doesn't re-warm anything for the duration.
 Get-ScheduledTask THRONE_Watchdog_5min | Disable-ScheduledTask

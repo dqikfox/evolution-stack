@@ -24,6 +24,10 @@ Verify CUDA + 24 GB GPU: `python -c "import torch; print(torch.cuda.is_available
 - Before training: `Get-Process ollama,llama-server | Stop-Process -Force`.
 - Disable THRONE_Watchdog_5min cron so it doesn't auto-restart Ollama:
   `Get-ScheduledTask THRONE_Watchdog_5min | Disable-ScheduledTask`.
+  **Then re-enable it** - `Get-ScheduledTask THRONE_Watchdog_5min | Enable-ScheduledTask`.
+  Put the enable in a `finally` so an interrupted training run still
+  restores it. The estate gate fails while the watchdog is disabled, so
+  a forgotten disable is visible, but a visible fault is still a fault.
 - Expected VRAM during training: 14 GB (Qwen 7B 4-bit + LoRA + activations + grad checkpoint).
 
 ## API changes (transformers 5.17 + trl 1.14)
