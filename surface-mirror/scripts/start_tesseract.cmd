@@ -43,7 +43,37 @@ REM packages, not the site-packages of whatever launched it.
 set PYTHONPATH=
 set PYTHONHOME=
 
-set TESS_PROJECT=C:\Users\KING\Projects\TESSERACT
+REM The application root is RESOLVED, not hardcoded.
+REM
+REM TESSERACT has two branches: master is the Python FastAPI app, main is
+REM the TypeScript lattice rewrite. They share one directory, and the other
+REM agent checks out main there - which removes the Python app's files from
+REM disk and leaves a tree that cannot start this service. A launcher that
+REM hardcodes one path breaks the moment the tree is switched underneath
+REM it, and a service that cannot be restarted is not a service.
+REM
+REM So the first candidate that actually contains server.py wins:
+REM   1. TESSERACT_ROOT, if the operator set it
+REM   2. the canonical worktree, pinned to master - it keeps the Python
+REM      app and the live data\ directory
+REM   3. the shared checkout, for when the tree is on master
+set TESS_PROJECT=
+for %%D in (
+    "%TESSERACT_ROOT%"
+    "C:\Users\KING\Projects\TESSERACT-py"
+    "C:\Users\KING\Projects\TESSERACT"
+) do (
+    if not defined TESS_PROJECT (
+        if exist "%%~D\server.py" set TESS_PROJECT=%%~D
+    )
+)
+if not defined TESS_PROJECT (
+    echo [tesseract] FAILED: no server.py found in any known root
+    echo [tesseract]   TESSERACT_ROOT=%TESSERACT_ROOT%
+    echo [tesseract]   tried: C:\Users\KING\Projects\TESSERACT-py, C:\Users\KING\Projects\TESSERACT
+    exit /b 1
+)
+echo [tesseract] app root: %TESS_PROJECT%
 set TESS_PY=%TESS_PROJECT%\.venv\Scripts\python.exe
 set TESS_PORT=8705
 set TESS_LOG=%LOCALAPPDATA%\hermes\logs\tesseract_stdout.log
