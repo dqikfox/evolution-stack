@@ -182,8 +182,28 @@ def check_peers() -> list[Check]:
 
 def check_nexus_api() -> Check:
     t0 = time.time()
+    # A maintenance window is not an API failure. NEXUS holds the vector
+    # index in a SQLite file the server keeps open, so a rebuild cannot
+    # run beside it: the rebuild takes the server down on purpose and
+    # the launcher refuses to bring it back until the rebuild is done.
+    # During that window the API is unreachable BY DESIGN, and the bench
+    # must not score it as a broken API.
+    if _rebuild_in_progress():
+        return Check(
+            "nexus:health", "apis", 5.0, False,
+            "maintenance window (a rebuild holds the lock)", time.time() - t0,
+            scored=False,
+        )
     ok, body = _http_json("http://127.0.0.1:8650/health")
     return Check("nexus:health", "apis", 5.0, ok, body[:120], time.time() - t0)
+
+
+def _rebuild_in_progress() -> bool:
+    """True while a vector index rebuild holds the maintenance lock."""
+    try:
+        return Path(r"E:\ultron-memory\nexus-core\data\REBUILD.lock").exists()
+    except OSError:
+        return False
 
 
 def check_ollama_api() -> Check:
