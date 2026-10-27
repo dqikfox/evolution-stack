@@ -163,7 +163,7 @@ def check_scheduled_tasks() -> Check:
     # the clock. The default .ToString() is culture-dependent - on this
     # host it is '27/10/2026 5:57:59 PM' - which no ISO parser accepts.
     script = (
-        "foreach($n in @('Hermes_Gateway','THRONE_Watchdog_5min')){"
+        "foreach($n in @('Hermes_Gateway','THRONE_Watchdog_5min','THRONE_Nexus_Reindex')){"
         "$t=Get-ScheduledTask -TaskName $n -EA SilentlyContinue;"
         "if(-not $t){Write-Output \"$n|MISSING||\";continue};"
         "$i=Get-ScheduledTaskInfo $t;"
@@ -190,7 +190,9 @@ def check_scheduled_tasks() -> Check:
             # look perfect and the estate still has no way back.
             problems.append(f"{name} is DISABLED - it will never fire")
             continue
-        if name == "THRONE_Watchdog_5min" and not nxt.strip():
+        if name != "Hermes_Gateway" and not nxt.strip():
+            # Hermes_Gateway is logon-triggered and has no NextRunTime -
+            # that is correct for it. Every repeating task must have one.
             problems.append(f"{name} has no NextRunTime (expired trigger)")
             continue
         try:
@@ -324,25 +326,61 @@ def check_recent_executions_ok() -> Check:
     and has completed cleanly every run since. Only a failure inside the
     last few minutes, or a job whose own failure_streak is non-zero, is a
     live fault.
+
+    A failure the house's OWN INCIDENT SYSTEM has closed is also history.
+    On 2026-10-27 the watchdog reported NEXUS down four times while it was
+    deliberately stopped for a vector rebuild, and every one of those
+    incidents was closed the moment the rebuild finished and the service
+    came back. The gate called that a live fault. It was not: the job did
+    exactly its job - it reported an outage, loudly - and the outage ended.
+    The incidents table records the closing, so the check reads it.
     """
     c = Check("recent_executions_ok", "cron")
     try:
         con = sqlite3.connect(f"file:{CRON_DB}?mode=ro", uri=True)
         rows = con.execute(
-            "select job_id,status,started_at,error from executions "
+            "select job_id,status,started_at,error,id from executions "
             "where started_at > ? and status != 'completed' order by started_at desc limit 6",
             (_since(0.75),),
         ).fetchall()
+        # Closed incidents, per job. The incident's error_sig is NOT the
+        # execution id - executions are keyed by a 32-character uuid while
+        # an incident is keyed by a 12-character dispatch id - so the two
+        # are joined on the JOB and on TIME: a closed incident covers
+        # every failure of that job that started before it was closed.
+        closed_at: dict[str, str] = {}
+        try:
+            for jid, when in con.execute(
+                "select job_id, closed_at from cron_incidents "
+                "where closed_at is not null"
+            ):
+                if jid and when:
+                    prev = closed_at.get(str(jid))
+                    if not prev or when > prev:
+                        closed_at[str(jid)] = when
+        except sqlite3.Error:
+            pass
         con.close()
     except Exception as exc:  # noqa: BLE001
         c.error = f"db: {exc}"
         return record(c)
     streaks = _failure_streaks()
     failing = {jid for jid, n in streaks.items() if n > 0}
-    c.ok = not rows and not failing
-    c.detail = f"no live failures; failing jobs={sorted(failing) or 'none'}"
-    if rows or failing:
-        detail = "; ".join(f"{r[0]} {r[1]} {r[2]}" for r in rows[:3])
+    # A failure is recovered when the house closed an incident for that
+    # job AFTER the failure happened. The comparison is on the job and the
+    # timestamps, not on identifiers that do not match.
+    def _recovered(row) -> bool:
+        when = closed_at.get(str(row[0]))
+        return bool(when) and str(row[2]) <= when
+
+    live = [r for r in rows if not _recovered(r)]
+    c.ok = not live and not failing
+    c.detail = (
+        f"no live failures; failing jobs={sorted(failing) or 'none'}; "
+        f"recovered={len(rows) - len(live)}"
+    )
+    if live or failing:
+        detail = "; ".join(f"{r[0]} {r[1]} {r[2]}" for r in live[:3])
         if failing:
             detail += f"; failure_streak: { {k: v for k, v in streaks.items() if v} }"
         c.error = detail

@@ -41,9 +41,31 @@ class Service:
     health: str | None
     critical: bool
     notes: str
+    # The registry's explicit opt-out: "start": {"heal": false} means
+    # this service has a start path but must NOT be started
+    # automatically. A start path is a fact; whether the house is
+    # allowed to use it is a policy.
+    heal: bool = True
 
     @property
     def healable(self) -> bool:
+        """Can the house start this service on its own?
+
+        A start path is necessary but not sufficient. The registry's
+        `start.heal: false` is an explicit refusal, and it wins.
+
+        ComfyUI is the reason. It has a start path, it is optional, and
+        starting it holds about 17GB of the RTX 3090's VRAM - which
+        evicts starscream-64k, the model the evolution loop is ITSELF
+        running on. On 2026-10-27 the bench reported ComfyUI as a
+        gate-actionable failure and the loop moved to start it, for a
+        service that is SUPPOSED to be down.
+
+        A service that is meant to be off must read as operator-level,
+        not as a failure waiting to be healed.
+        """
+        if not self.heal:
+            return False
         return self.start_type in ("cmd", "script") and bool(self.start_path)
 
     @property
@@ -75,6 +97,7 @@ def load() -> list[Service]:
                     health=s.get("health"),
                     critical=bool(s.get("critical", False)),
                     notes=s.get("notes", ""),
+                    heal=bool(start.get("heal", True)),
                 ))
             return svc
         except Exception:
@@ -202,6 +225,11 @@ def _spawn_detached(command: list[str], cwd: str, log_path: Path) -> bool:
 
 def heal(s: Service, wait_s: int = 25) -> tuple[bool, str]:
     """Launch the documented start path and wait for the port to answer."""
+    if not s.heal:
+        # The registry refused it. Say so, and say why the refusal
+        # exists - otherwise this reads as a broken start path and
+        # somebody will "fix" it by making the service healable again.
+        return False, "registry opt-out (start.heal=false): not started on purpose"
     if not s.healable:
         return False, "no start path"
     p = Path(s.start_path)
