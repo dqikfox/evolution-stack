@@ -120,7 +120,32 @@ if not second["nexus_ok"]:
     with open(OUT / "last_nexus_heal.txt", "w", encoding="utf-8") as fh:
         rc = subprocess.call([sys.executable, str(SCR / "restart_nexus.py")],
                              stdout=fh, stderr=subprocess.STDOUT)
-    heals.append("nexus:ok;" if rc == 0 else "nexus:fail;")
+    # THE EXIT CODE IS NOT THE ANSWER. The launcher exits 0 when it
+    # REFUSES to start the server - which is what it does while a vector
+    # index rebuild holds the lock, and refusing is the correct answer
+    # there. So "rc == 0" was reported as "nexus:ok" on a run where
+    # NEXUS was still down, and the run then carried on believing the
+    # service had been healed.
+    #
+    # The only proof that the service is up is that it answers. So
+    # after the heal, ask it.
+    time.sleep(5)
+    after_ok, after_b = http("http://127.0.0.1:8650/health", TIMEOUTS["nexus"])
+    if after_ok:
+        heals.append("nexus:ok;")
+    else:
+        # Say WHY it is still down. A rebuild holding the lock is a
+        # maintenance window, not a fault, and the operator needs to
+        # know which one they are looking at.
+        try:
+            lock = Path(r"E:\ultron-memory\nexus-core\data\REBUILD.lock")
+            if lock.exists():
+                heals.append("nexus:refused-rebuild-in-progress;")
+                notices.append("nexus:down-maintenance-rebuild")
+            else:
+                heals.append("nexus:fail;")
+        except Exception:
+            heals.append("nexus:fail;")
 elif not first.get("nexus_ok"):
     # It failed the first probe and answered the second. That is a BUSY
     # service, not a dead one, and it was not restarted. Say so - but
