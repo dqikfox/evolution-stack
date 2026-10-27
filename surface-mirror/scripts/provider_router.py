@@ -142,6 +142,16 @@ REGISTRY: list[Provider] = [
              cost_tier="chatgpt", priority=25, local=True,
              note="ChatGPT Plus via the Codex CLI's OAuth session. No API key and no "
                   "credit balance - it rides the Plus subscription."),
+    # shadow is the second GPU on the tailnet: an RTX A4500 with its own
+    # Ollama. It is a real inference endpoint, not a copy of THRONE's
+    # weights, so it adds capacity AND a different set of models to the
+    # rotation. It is addressed over Tailscale, so it is only reachable
+    # while the tailnet is up - which is why it is marked local and given
+    # the generous local timeout.
+    Provider("shadow", "ollama", "http://100.96.46.85:11434", "qwen3.6:27b",
+             cost_tier="local", priority=45, local=True,
+             note="shadow (SHADOW-EOKGST4R), an RTX A4500 on the tailnet with its "
+                  "own Ollama. Second GPU, second set of models. Needs the tailnet."),
 ]
 
 
@@ -312,7 +322,6 @@ CODEX_BIN_FALLBACK = r"C:\Users\KING\.codex\.sandbox-bin\codex.exe"
 # context load has been measured at 68s. 300s leaves headroom without
 # letting a genuinely dead provider stall the whole health sweep.
 CODEX_TIMEOUT = 300
-
 # A local provider is a process on this host, not a link across the internet.
 # It has no network latency, so a miss is a cold start - a model loading, an
 # index opening - and not a slow route.
@@ -324,6 +333,13 @@ CODEX_TIMEOUT = 300
 # was merely cold, and a false failure is worse than a slow answer.
 # The floor stays at 45s by the house rule; the truth is 120.
 LOCAL_TIMEOUT = 120
+
+# A local PEER on the tailnet is a different case from a local process: it
+# can be OFFLINE, and an offline peer answers nothing at all. A 25s leash is
+# far longer than a healthy peer needs and far shorter than the caller's
+# full budget. Without this, a peer that goes offline costs every rotation
+# its whole timeout, on every call, until it comes back.
+LOCAL_PEER_TIMEOUT = 25
 
 
 def _codex_call(p: Provider, prompt: str, timeout: int):
@@ -458,20 +474,25 @@ def call(p: Provider, prompt: str, max_tokens: int = 256, timeout: int = 120):
 
     elif p.kind == "openai":
         if not key:
-            # A LOCAL endpoint (the NEXUS proxy) accepts a well-known
-            # placeholder. A HOSTED API must never receive one: it answers
-            # 'invalid_api_key', which reads as bad credentials when the
-            # truth is that we had no credential to send.
+            # A LOCAL endpoint (the NEXUS proxy, shadow, etc.) speaks the
+            # OpenAI shape but does not require a key. A HOSTED API must
+            # never receive a placeholder: it answers 'invalid_api_key',
+            # which reads as bad credentials when the truth is that we had
+            # no credential to send.
             if p.local:
-                key = "nexus-local"
+                key = None
             else:
                 meta["error"] = "no key"
                 raise RuntimeError("no key")
-        headers = {"Authorization": "Bearer " + key}
+        headers = {"Authorization": "Bearer " + key} if key else {}
         payload = {"model": p.model, "max_tokens": max_tokens,
                    "messages": [{"role": "user", "content": prompt}]}
         # The Responses API is required for the newest OpenAI reasoning models.
-        if p.name == "openai":
+        if p.name == "openai" and not p.local:
+            # The real OpenAI endpoint uses the Responses API for its newest
+            # reasoning models. Every other OpenAI-compatible endpoint (local
+            # Ollama, NEXUS, shadow, ollama-cloud, etc.) speaks the older
+            # chat/completions shape, so they must be routed there.
             payload = {"model": p.model, "input": prompt, "max_output_tokens": max_tokens}
             st, body, err = _post(p.base_url + "/responses", payload, headers, timeout)
         else:
@@ -790,6 +811,14 @@ def route(prompt: str, only: str | None = None, model: str | None = None,
         try:
             # The Codex CLI needs its own leash, not the HTTP default.
             p_timeout = max(timeout, CODEX_TIMEOUT) if p.kind == "codex" else timeout
+            # A LOCAL provider is a process on this host or a peer on the
+            # tailnet. It has no internet latency, so if it misses a SHORT
+            # deadline the cause is that it is DOWN, not that it is slow.
+            # A peer that is offline must not burn the caller's whole budget:
+            # the rotation would spend the full timeout discovering that, for
+            # every single call, until the peer came back.
+            if p.local and p_timeout > LOCAL_PEER_TIMEOUT:
+                p_timeout = LOCAL_PEER_TIMEOUT
             text, meta = call(p, prompt, max_tokens, p_timeout)
             record(meta)
             meta["attempts"] = attempts

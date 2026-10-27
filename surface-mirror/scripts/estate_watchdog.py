@@ -110,7 +110,16 @@ def heal(service: dict) -> bool:
     try:
         result = subprocess.run(["cmd.exe", "/c", command], capture_output=True,
                                 text=True, timeout=LAUNCHER_BUDGET,
-                                encoding="utf-8", errors="replace")
+                                encoding="utf-8", errors="replace",
+                                # stdin must NOT be inherited. Several of the
+                                # house launchers end with "pause", and an
+                                # inherited console makes that wait for a
+                                # keypress that never comes - the heal would
+                                # then burn its whole budget and report the
+                                # service as still down when the launcher had
+                                # actually worked. With stdin closed, "pause"
+                                # returns at once.
+                                stdin=subprocess.DEVNULL)
     except Exception as exc:
         log(f"  {service.get('name')}: the launcher failed to run: {exc}")
         return False
@@ -184,6 +193,15 @@ def main() -> int:
     for service in services:
         name = service.get("name")
         start = service.get("start") or {}
+        if start.get("heal") is False:
+            # An explicit opt-out. The service may have a start path and still
+            # be unsafe to auto-heal - a GPU-heavy service that would starve
+            # the agent's own model, for example. "has a start path" and
+            # "should be auto-healed" are different questions, so the registry
+            # states the answer instead of inferring it from the path.
+            log(f"  {name} (:{service.get('port')}) is marked heal: false - "
+                f"reported, deliberately not healed")
+            continue
         if not start.get("path"):
             # An operator-level service with no documented start path is not
             # a failure - it is a task for a human, and the gate reports it
