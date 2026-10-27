@@ -1,0 +1,35 @@
+diff --git a/plugins/disk-cleanup/disk_cleanup.py b/plugins/disk-cleanup/disk_cleanup.py
+index f911197ae3e..807cd210423 100755
+--- a/plugins/disk-cleanup/disk_cleanup.py
++++ b/plugins/disk-cleanup/disk_cleanup.py
+@@ -111,7 +111,13 @@ _EMPTY_DIR_PROTECTED_TOP_LEVEL = frozenset({
+     # Per-profile user trees bootstrapped by ``profiles.py::_PROFILE_DIRS`` (#112859).
+     "workspace", "plans", "home",
+     # Kanban owns its own lifecycle (workspaces GC'd at terminal state, attachments live with the task).
+-    "kanban"})
++    "kanban",
++    # The house's regression-test tree. A test that the estate gate RUNS is
++    # not disposable: it is part of the estate, and the gate is what proves
++    # the estate works. Deleting it at session end meant the next gate run
++    # reported "test file missing" and the estate looked broken when it was
++    # in fact incomplete.
++    "tests"})
+ 
+ _EMPTY_DIR_SWEEP_PRUNE_DIRS = frozenset({
+     ".git", "node_modules", "venv", ".venv", "site-packages", "__pycache__"})
+@@ -130,7 +136,14 @@ _NEVER_TRACK_TOP_LEVEL = frozenset({
+     "profiles", "backups", "optional-skills", "workspace", "plans", "home",
+     # Kanban task attachments/workspaces have their own lifecycle; test_* staging files there are
+     # not disposable (#114552).
+-    "kanban"})
++    "kanban",
++    # The house's regression-test tree. guess_category() returns "test" for any
++    # file named test_* outside a protected tree, and a "test" file is deleted
++    # at session end. The estate gate RUNS these tests, so they are part of
++    # the estate: deleting them made the next gate run report the estate as
++    # broken ("test_ml_stack.py missing") when the truth was that the test
++    # had been swept away an hour earlier.
++    "tests"})
+ 
+ 
+ def _is_protected_dir(p: Path) -> bool:

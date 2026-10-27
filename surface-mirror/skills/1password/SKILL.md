@@ -100,6 +100,20 @@ A JSON template file also works as a positional, but ONLY with `--title` given s
 
 **`op item get` does not reveal a concealed field.** Add `--reveal`, or the credential reads back as empty and you will think the write failed when it landed.
 
+**`--fields` takes a FIELD NAME, never `name=value`.** `op item get HF_TOKEN --fields credential=HF_TOKEN` parses the whole string `credential=HF_TOKEN` as a field NAME, matches nothing, and returns an EMPTY STRING with exit code 0 — no error, no warning. The correct form is `--fields credential --reveal`. A zero-length result from `op item get` therefore means "you asked for the wrong field", not "the secret is unset".
+
+**Always length-check a secret before using it.** Because `op` fails silently
+here, an empty token becomes a malformed HTTP header far from its cause
+(`Illegal header value b'Bearer '` looks like a network bug, not a missing
+secret). Probe the value before it is used:
+
+```bash
+T=$(op item get HF_TOKEN --vault credentials --fields credential --reveal 2>/dev/null | tr -d '\r\n')
+[ -n "$T" ] || { echo "empty token: wrong field name or missing --reveal" >&2; exit 1; }
+```
+
+Compare lengths, not values, when checking a secret against another copy.
+
 **Do not destroy the old credential while adding a new one.** A new project key goes in a NEW item with its own title, scope and verdict in the note; the old item stays untouched until the user says otherwise.
 
 ## Hermes Execution Pattern (desktop app flow)
@@ -160,6 +174,21 @@ export DB_PASSWORD="op://app-prod/db/password"  # example op:// reference, resol
 op run -- sh -c '[ -n "$DB_PASSWORD" ] && echo "DB_PASSWORD is set" || echo "DB_PASSWORD missing"'
 ```
 
+## Hermes external secret sources
+
+Hermes resolves secrets from `config.yaml` under `secrets.<source>.env`, where each value is an `op://vault/item/field` reference. The 1Password source is enabled by default and resolves the whole map at startup ("1Password: applied N secrets").
+
+**A plaintext value in `~/.hermes/.env` SHADOWS the vault reference of the same name.** The env loader applies dotenv with `override=True` BEFORE the external sources run, and a source SKIPS a name that already exists in the environment. A literal in `.env` therefore silently wins, the vault stops being authoritative, and that secret never rotates. Conversely, a LITERAL entry inside the `secrets.onepassword.env` map is skipped by the source ("is not an op:// secret reference") and is never injected at all, so the variable is simply absent from the process.
+
+Order of operations when adding a secret:
+
+1. Store it in the vault with a **dedicated field**, not a note. `op://vault/Item/notesPlain` injects the entire note text, and a note that merely CONTAINS the value is worse than no reference at all.
+2. Add `NAME: op://vault/Item/field` to `secrets.onepassword.env` in `config.yaml`.
+3. Remove the literal from `.env` — only after proving the two are byte-identical.
+4. Keep `OP_SERVICE_ACCOUNT_TOKEN` in `.env`; it is the bootstrap the source needs to authenticate at all. Every other secret belongs in the vault.
+
+Audit with `hermes/scripts/audit_secret_shadowing.py`: it resolves every reference, compares SHA-256 digests against any `.env` literal, and reports SAFE TO STRIP / VAULT IS STALE / vault-only. Compare digests, never values.
+
 ## Guardrails
 
 - Never print raw secrets back to user unless they explicitly request the value.
@@ -181,6 +210,8 @@ op run -- sh -c '[ -n "$DB_PASSWORD" ] && echo "DB_PASSWORD is set" || echo "DB_
 - **`op item get --format json` redacts values that look like private keys** (`[REDACTED PRIVATE KEY]`) in its output, so round-trip verification of stored key material silently fails. Add `--reveal` when comparing a stored key against the on-disk original.
 - **Invoke `op` through bash, not a Python `subprocess` call, on Windows.** The same argument list that works in bash can fail from Python with `invalid JSON provided` on `op item edit`; run `op` as a terminal/bash command (or via a bash `-c` wrapper) and only use Python for JSON parsing of stdout.
 - **Compare a plaintext secret against the vault without echoing either side.** Read both into shell variables and print only `MATCH`/`DIFFER` plus character counts; a length mismatch alone tells you the vault copy is stale without leaking a character. Probe the live service on ANY mismatch — an identical-but-revoked token still needs flagging, not archiving.
+- **A vault field can hold a placeholder instead of a credential.** An 11-character `sk-ant-…` value is a placeholder, not a revoked key. Before declaring a credential revoked, check its length and shape and probe the live service — the failing provider is often NOT the one you assumed, and "401" gets blamed on the wrong vendor.
+- **`op item edit <title> "label=value" --vault <v>` can work from a Python `subprocess` on Windows**, but always read the item back and compare the field value before trusting the write. The bash-first guidance remains the safe default; verified read-back is what actually proves the edit landed.
 - **Wipe plaintext secret files by overwriting before deleting** (`head -c N /dev/urandom > file && rm file`), and only after the vault copy round-trips clean. Deleting without the overwrite leaves the value recoverable on the filesystem.
 
 ## CI / Headless note

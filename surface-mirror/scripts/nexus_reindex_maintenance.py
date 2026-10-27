@@ -130,7 +130,49 @@ def main() -> int:
         # --fresh is spelled twice on purpose: dropping the index is
         # destructive and has to be asked for explicitly.
         wrapper = HERMES / "scripts" / "nexus_reindex_resilient.cmd"
-        rc, out = run(["cmd", "/c", str(wrapper), "12", "fresh"], timeout=60 * 150)
+
+        # FRESH OR RESUME - DECIDED, NOT ASSUMED.
+        #
+        # The old code always said "fresh", which DROPS the collection
+        # and rebuilds it from zero. That is right when the chunking
+        # policy has changed, because the old vector ids and the new
+        # ones are different strings and an incremental run over a
+        # policy-changed index leaves the old vectors behind as
+        # orphans that still match queries.
+        #
+        # But it is enormously wasteful when the policy has NOT
+        # changed. On 2026-10-28 the corpus held 2,805 notes and the
+        # index covered 2,503 of them: a resume had 4,243 vectors to
+        # build, a fresh had 20,561, and the fresh would have thrown
+        # away 16,318 vectors that were already correct.
+        #
+        # So the question is asked and answered: does the index
+        # contain any vector the CURRENT policy would not produce? An
+        # orphan is the proof that the policy has moved. No orphans ->
+        # resume. Orphans -> fresh.
+        regime_rc, regime_out = run(
+            [str(NEXUS_VENV), str(HERMES / "scripts" / "nexus_index_regime.py")],
+            timeout=600)
+        for line in regime_out.strip().splitlines()[-4:]:
+            log(f"  regime: {line}")
+        if regime_rc == 0:
+            mode = "resume"
+            log("rebuild: RESUME - the index is already in the current "
+                "chunking regime, so the good vectors are kept and only "
+                "what is missing is built")
+        elif regime_rc == 1:
+            mode = "fresh"
+            log("rebuild: FRESH - the chunking policy has changed, so the "
+                "old vectors are orphans and the collection is dropped")
+        else:
+            # The check could not be made. A resume is the safe
+            # default: it never destroys what is there, and the worst
+            # case is that a stale vector survives to the next cycle.
+            mode = "resume"
+            log("rebuild: RESUME - the regime could not be determined, and "
+                "resume never destroys work")
+
+        rc, out = run(["cmd", "/c", str(wrapper), "40", mode], timeout=60 * 150)
         for line in out.strip().splitlines()[-25:]:
             log(f"  {line}")
         log(f"rebuild: rc={rc}")

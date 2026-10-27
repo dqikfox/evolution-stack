@@ -39,6 +39,8 @@ set FIRSTPASS=fresh
 if "%2"=="resume" set FIRSTPASS=resume
 set PASS=0
 set LOCKFILE=E:\ultron-memory\nexus-core\data\REBUILD.lock
+set LOCKLOG=%LOCALAPPDATA%\hermes\logs\nxr_lockkeeper.log
+set HERMES_SCRIPTS=%LOCALAPPDATA%\hermes\scripts
 REM The rebuild runs in SLICES. Each slice indexes a bounded number of
 REM notes, COMMITS them, and exits 0. A rebuild that is killed every
 REM few minutes can never finish if every attempt tries to do the
@@ -66,8 +68,69 @@ REM So the wrapper takes the lock once, before the first pass, and every
 REM pass runs with --lock-held: the tool neither takes it nor releases
 REM it. The lock comes off only when the whole sequence is done, which
 REM is the one moment the server is genuinely allowed to come back.
+REM THE LOCK IS TAKEN EXCLUSIVELY, OR IT IS NOT A LOCK.
+REM
+REM "if not exist" is not a lock. It is a hint. Two wrappers started in
+REM the same second both see no file, both create one, and both run
+REM their passes against the same Chroma file - and the second one
+REM drops the collection the first one is filling. That is the
+REM deadlock this whole file exists to prevent, and the guard against
+REM it was the one thing that did not guard it.
+REM
+REM The tool takes this lock with O_EXCL, which is exclusive, and
+REM refuses when the lock is already held. But the tool is invoked
+REM with --lock-held precisely so that it does NOT take or release
+REM the lock itself - the wrapper holds it across the whole sequence
+REM so the five-minute health job cannot start the server onto a
+REM half-built index. So the wrapper has to take the lock the same
+REM exclusive way the tool does, or the exclusivity is lost.
+REM
+REM A KEEPER HOLDS IT, NOT A ONE-SHOT PROCESS.
+REM
+REM The guard that reads this lock decides whether the rebuild is live
+REM by checking whether the RECORDED PID is still alive. The pid in
+REM the lock has to be a process that lives for the whole sequence of
+REM passes, because between passes there is no reindex process running
+REM - the lock's liveness rests entirely on that one check.
+REM
+REM So the recorded pid is a KEEPER: a process whose only job is to
+REM hold the lock and stay alive. The wrapper starts it in the
+REM background, and it releases the lock itself if the wrapper dies, so
+REM a crashed rebuild cannot lock the brain out forever.
+REM
+REM A one-shot process that takes the lock and exits was tried first,
+REM and the recorded pid was dead the instant it was written. The guard
+REM declared the lock stale, cleared it, and started NEXUS onto a
+REM half-built index - on 2026-10-28, in the middle of this rebuild.
+REM
+REM THE HOLDER IS SPAWNED DETACHED BY THE SCRIPT ITSELF, so this line
+REM does not use "start /b" any more.
+REM
+REM "start /b" runs a child in the same console with the same handles.
+REM The maintenance script captures the wrapper's output, so it waits
+REM for that output pipe to close. Windows handle inheritance passes
+REM EVERY inheritable handle, not only the redirected ones, so a
+REM "start /b" child held a duplicate of the pipe open for as long as
+REM it lived - and the maintenance script waited for a pipe that only
+REM the wrapper could close. It hung on a rebuild that had already
+REM succeeded. Observed on 2026-10-28.
+REM
+REM nexus_reindex_lock.py now spawns the holder itself, DETACHED, with
+REM DEVNULL for all three standard handles and close_fds, so it
+REM inherits nothing from the wrapper. This line just asks for the
+REM lock and waits for the holder to be in place.
+"%NEXUS_VENV%" "%HERMES_SCRIPTS%\nexus_reindex_lock.py" "%LOCKFILE%" --hold >> "%LOCKLOG%" 2>&1
+if errorlevel 3 (
+    echo ==== another rebuild already holds the lock - refusing to start ==== >> "%LOG%"
+    exit /b 3
+)
+if errorlevel 1 (
+    echo ==== FAILED to take the rebuild lock - refusing to start ==== >> "%LOG%"
+    exit /b 4
+)
 if not exist "%LOCKFILE%" (
-    echo vector index rebuild started %DATE% %TIME% (wrapper, pid %RANDOM%) > "%LOCKFILE%"
+    echo ==== FAILED to take the rebuild lock - refusing to start ==== >> "%LOG%"
+    exit /b 4
 )
 
 REM Control flow is goto-based on purpose: a parenthesised block ends at

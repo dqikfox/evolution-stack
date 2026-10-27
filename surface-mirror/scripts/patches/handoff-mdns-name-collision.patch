@@ -1,0 +1,46 @@
+diff --git a/handoff/__init__.py b/handoff/__init__.py
+index a97f096..f842b1c 100644
+--- a/handoff/__init__.py
++++ b/handoff/__init__.py
+@@ -70,5 +70,8 @@ def register(ctx) -> None:  # noqa: ARG001 — ctx interface per the hermes plug
+             print(f"[handoff] handoff server started device_id={srv.identity.device_id} "
+                   f"port={srv.port} (mDNS advertising)")
+         except Exception as e:  # noqa: BLE001 — a plugin startup failure should not bring down hermes
+-            print(f"[handoff] startup failed: {e}", file=sys.stderr)
++            # An empty message means the exception carries no text; name the type so the log
++            # line is actionable instead of a bare "[handoff] startup failed: ".
++            detail = str(e) or type(e).__name__
++            print(f"[handoff] startup failed: {detail}", file=sys.stderr)
+     threading.Thread(target=_start, name="handoff-server", daemon=True).start()
+diff --git a/handoff/handoff_server.py b/handoff/handoff_server.py
+index d2c66e6..0fb3534 100644
+--- a/handoff/handoff_server.py
++++ b/handoff/handoff_server.py
+@@ -182,7 +182,26 @@ class HandoffServer:
+             port=self.port,
+             properties={"did": self.identity.device_id, "ver": str(PROTO)},
+         )
+-        self._zc.register_service(info)
++        # The mDNS name is derived from the device id, so it is stable across restarts. A second
++        # live instance of this host (the running gateway, a CLI invocation) already owns that
++        # name, and zeroconf then raises NonUniqueNameException. That is a collision, not a
++        # fatal fault: the TCP listener is already bound and serving, so the caller must not
++        # treat the advertisement failure as a startup failure. Retry with a name change
++        # allowed so this instance gets a distinct suffix and stays discoverable.
++        try:
++            self._zc.register_service(info)
++        except Exception as exc:  # noqa: BLE001 — advertising must never kill the server
++            try:
++                from zeroconf import NonUniqueNameException
++            except ImportError:
++                NonUniqueNameException = ()  # type: ignore[assignment]
++            if NonUniqueNameException and isinstance(exc, NonUniqueNameException):
++                try:
++                    self._zc.register_service(info, allow_name_change=True)
++                except Exception:  # noqa: BLE001 — the TCP listener still works without mDNS
++                    pass
++            else:
++                raise
+         self._zc_info = info
+ 
+     def stop(self):

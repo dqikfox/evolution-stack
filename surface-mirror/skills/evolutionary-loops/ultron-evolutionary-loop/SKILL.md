@@ -140,6 +140,27 @@ defects found and the fixes, is in
   about HERETIK :8080 and KRYSYS :8500 for days instead of restarting them.
   Document the start path in `E:\ultron-memory\infra\SERVICES.json` and the
   cycle restarts it automatically.
+- **A start path is PERMISSION, not just a capability** — the rule above
+  pushes the loop to add a start path to EVERY service it finds unhealed, and
+  that is wrong for a service that must stay down. ComfyUI is the case: it
+  parks ~3.2GB of CUDA context on the RTX 3090 while the agent's own
+  `starscream-64k` needs 17.5GB of 24GB, so a watchdog-healed ComfyUI starves
+  the agent that is running the loop. The loop read "no start path" as a
+  defect and added one. The registry therefore carries an explicit opt-out,
+  `start.heal: false`, and the loop must honour it: "has a launcher" and
+  "may be auto-healed" are different questions. When you deliberately keep a
+  service unhealed, record the reason in the entry's `notes` so the next
+  cycle sees the DECISION and not just the missing field. A service the loop
+  should never touch belongs to the operator, not to the healer.
+- **The loop's own report is a CLAIM, not evidence** — a cycle that reports
+  "updated with a valid launcher (run_nvidia_pro.bat)" may have written a
+  different path, or a path that does not exist on disk. The report also
+  asserted the state was correct while the bench it cited had itself errored
+  out. Before acting on a cycle's report, re-read the file it says it changed
+  and confirm the named path exists; a self-report that cannot be checked
+  against the filesystem is the loop grading its own homework. Quote the
+  gate delta you actually measured, and say plainly when a sub-step failed
+  rather than substituting a reason for why the disk state is "confirmed".
 - **A start path without its interpreter is not a start path** — a script that
   needs a specific environment (NEXUS needs the uv venv with numpy+chromadb)
   will fail when the healer launches it with the bare `python` on PATH. Put the

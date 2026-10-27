@@ -348,7 +348,15 @@ def _probe(url, contains=None, timeout=6):
     return True, "healthy"
 
 
-def prepare(port, marker, health=None, contains=None):
+def prepare(port,
+    marker, health=None, contains=None, allow_unhealed=True):
+    try:
+        import json
+        with open(r"E:\ultron-memory\infra\SERVICES.json", "r") as f: reg = json.load(f)
+        for s in reg.get("services", []):
+            if str(s.get("port")) == str(port) and s.get("start", {}).get("heal") is False:
+                return 1, "forbidden"
+    except Exception: pass
     """Put the port in a state a launcher can start from, and say which.
 
     The decision the launcher needs is one of three things:

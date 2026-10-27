@@ -52,9 +52,6 @@ git diff HEAD -- specific_file.py
 Scan added lines only. Any match is a security concern fed into Step 5.
 
 ```bash
-# Hardcoded secrets
-git diff --cached | grep "^+" | grep -iE "(api_key|secret|password|token|passwd)\s*=\s*['\"][^'\"]{6,}['\"]"
-
 # Shell injection
 git diff --cached | grep "^+" | grep -E "os\.system\(|subprocess.*shell=True"
 
@@ -67,6 +64,20 @@ git diff --cached | grep "^+" | grep -E "pickle\.loads?\("
 # SQL injection (string formatting in queries)
 git diff --cached | grep "^+" | grep -E "execute\(f\"|\.format\(.*SELECT|\.format\(.*INSERT"
 ```
+
+**Hardcoded secrets: use the real scanner, not a grep.** A grep for
+`(api[_-]?key|password|token|secret|bearer)\s*[:=]\s*['\"]` only matches an
+assignment with a secret-sounding NAME, so it misses a credential pasted into
+prose, a README, a note or a chat transcript, and it misses a webhook URL
+because the name ends in `_URL`. It also cannot tell a credential from a
+synthetic fixture, so a name+length rule blocks every push as soon as a
+test file holds a deliberately redacted token. Run the estate scanner
+(`python -m evo sweep <paths>`, or `from evo.secrets import scan_file`),
+which applies the name-independent rules too, and **prove the negative**:
+plant a synthetic key in a scratch file, run the scanner, and confirm it
+fires. A scanner reporting 0 because its rules are broken is
+indistinguishable from a scanner reporting 0 because the code is clean.
+See `code-review-light` for the full guard design rules.
 
 ## Step 3 — Baseline tests and linting
 
@@ -235,8 +246,13 @@ After the fix agent completes, re-run Steps 1-6 (full verification cycle).
 If verification passed:
 
 ```bash
-git add -A && git commit -m "[verified] <description>"
+git add <explicit paths> && git commit -m "[verified] <description>"
 ```
+
+**Stage explicit paths — never `git add -A`.** A blanket add stages whatever
+is in the tree, including `.env` files, scratch output and vendored
+directories that the payload check was supposed to catch. List the files
+you reviewed and stage exactly those.
 
 The `[verified]` prefix indicates an independent reviewer approved this change.
 
