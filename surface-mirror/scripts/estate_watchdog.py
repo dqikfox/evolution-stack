@@ -52,6 +52,23 @@ PROBE_TIMEOUT = 6
 HEAL_WAIT = 240
 LAUNCHER_BUDGET = HEAL_WAIT + 120
 
+# The pause between the first failed probe and the confirmation probe. It
+# has to be long enough that a service busy with real work has a chance to
+# answer, and short enough that a genuinely dead service is not left down
+# for long.
+CONFIRM_DELAY = 20
+
+# A per-service probe timeout overrides PROBE_TIMEOUT for services whose
+# health endpoint does more than answer. NEXUS CORE's /health walks its
+# components - the database, the Ollama roster, the embedding models - and
+# that walk can outlast the 6s default. Probing a busy service with a
+# timeout shorter than its own work is how a healthy service gets
+# restarted.
+PROBE_TIMEOUTS = {
+    "nexus-core": 90,
+    "nexus": 90,
+}
+
 
 def log(message: str) -> None:
     line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}"
@@ -83,8 +100,9 @@ def healthy(service: dict) -> bool:
     url = service.get("health")
     if not url:
         return True
+    timeout = PROBE_TIMEOUTS.get(str(service.get("name") or "").lower(), PROBE_TIMEOUT)
     try:
-        with urllib.request.urlopen(url, timeout=PROBE_TIMEOUT) as response:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
             return response.status < 500
     except urllib.error.HTTPError:
         return True                     # it answered - it just refused
@@ -217,6 +235,27 @@ def main() -> int:
             log(f"  {name}: the health check broke: {exc}")
             failed.append(name)
             continue
+        # CONFIRM before healing. One failed probe is not proof of a dead
+        # service: a service that is BUSY can fail a health check and be
+        # perfectly healthy. The real case on 2026-10-27 was NEXUS CORE
+        # running a vector reindex that re-embeds every note - that work
+        # holds the collection and the health walk stalls behind it, so
+        # the probe timed out and the watchdog RESTARTED a service that was
+        # in the middle of legitimate work. Restarting it did not fix the
+        # stall; it just destroyed the work in progress.
+        #
+        # So: probe again, and only heal a service that fails twice. A
+        # service that answers the second probe was never down.
+        log(f"  {name} (:{service.get('port')}) did not answer the first probe "
+            f"- confirming before any heal")
+        time.sleep(CONFIRM_DELAY)
+        try:
+            if healthy(service):
+                log(f"  {name} (:{service.get('port')}) answered the confirmation "
+                    f"probe - busy, not down. Not healed.")
+                continue
+        except Exception as exc:
+            log(f"  {name}: the confirmation probe broke: {exc}")
         log(f"  {name} (:{service.get('port')}) is DOWN")
         (healed if heal(service) else failed).append(name)
     peers_healed, peers_failed = check_peers()
