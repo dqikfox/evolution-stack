@@ -24,6 +24,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -146,20 +147,35 @@ def check_ticker_fresh() -> Check:
 
 
 def check_scheduled_tasks() -> Check:
-    """Every repeating task must have a FUTURE NextRunTime."""
+    """Every repeating task must be ENABLED and have a FUTURE NextRunTime.
+
+    The state matters as much as the timestamp. A DISABLED task keeps its
+    NextRunTime - the scheduler still knows when it WOULD run - so a check
+    that only looks for an empty timestamp passes a task that will never
+    fire. That is exactly what happened on 2026-10-27: the estate
+    watchdog was disabled, the gate still reported the tasks as healthy,
+    and the estate's independent recovery layer was silently gone. The
+    NextRunTime is also compared against the clock, not just checked for
+    emptiness, because a timestamp in the past is just as useless.
+    """
     c = Check("scheduled_tasks", "startup")
+    # The timestamp is emitted as ISO 8601 so it can be compared against
+    # the clock. The default .ToString() is culture-dependent - on this
+    # host it is '27/10/2026 5:57:59 PM' - which no ISO parser accepts.
     script = (
         "foreach($n in @('Hermes_Gateway','THRONE_Watchdog_5min')){"
         "$t=Get-ScheduledTask -TaskName $n -EA SilentlyContinue;"
-        "if(-not $t){Write-Output \"$n|MISSING\";continue};"
+        "if(-not $t){Write-Output \"$n|MISSING||\";continue};"
         "$i=Get-ScheduledTaskInfo $t;"
-        "Write-Output (\"{0}|{1}|{2}\" -f $n,$t.State,$i.NextRunTime)}"
+        "$nxt=''; if($i.NextRunTime){$nxt=$i.NextRunTime.ToString('o')};"
+        "Write-Output (\"{0}|{1}|{2}\" -f $n,$t.State,$nxt)}"
     )
     rc, out = powershell(script)
     if rc != 0:
         c.error = f"powershell rc={rc}: {out[:150]}"
         return record(c)
     problems, seen = [], []
+    now = datetime.now()
     for line in out.strip().splitlines():
         parts = line.split("|")
         if len(parts) < 3:
@@ -168,8 +184,29 @@ def check_scheduled_tasks() -> Check:
         seen.append(f"{name}={state}")
         if state == "MISSING":
             problems.append(f"{name} missing")
-        elif name == "THRONE_Watchdog_5min" and not nxt.strip():
+            continue
+        if state.lower() == "disabled":
+            # The independent recovery layer is off. Everything else can
+            # look perfect and the estate still has no way back.
+            problems.append(f"{name} is DISABLED - it will never fire")
+            continue
+        if name == "THRONE_Watchdog_5min" and not nxt.strip():
             problems.append(f"{name} has no NextRunTime (expired trigger)")
+            continue
+        try:
+            when = datetime.fromisoformat(nxt.strip())
+        except Exception:
+            if nxt.strip():
+                problems.append(f"{name} has an unreadable NextRunTime: {nxt!r}")
+            continue
+        # The timestamp carries a UTC offset (PowerShell's "o" format) and
+        # now() does not, so the two cannot be compared until they agree.
+        # Compare in the timestamp's own timezone rather than stripping
+        # the offset: the offset is what makes the instant unambiguous.
+        if when.tzinfo is not None:
+            when = when.astimezone().replace(tzinfo=None)
+        if when < now:
+            problems.append(f"{name} NextRunTime is in the past ({nxt})")
     c.ok = not problems
     c.detail = " ".join(seen) or "no tasks found"
     if problems:
