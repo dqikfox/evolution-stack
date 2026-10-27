@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 reports/consolidation-*.json
 reports/consolidation-*.md
+
+# The evolution lineage archive is a running artifact, not source.
+archive.db
