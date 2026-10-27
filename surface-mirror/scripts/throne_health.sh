@@ -130,7 +130,11 @@ if not second["nexus_ok"]:
     # The only proof that the service is up is that it answers. So
     # after the heal, ask it.
     time.sleep(5)
-    after_ok, after_b = http("http://127.0.0.1:8650/health", TIMEOUTS["nexus"])
+    # http() in THIS block returns a single bool, not a (ok, body) tuple
+    # like the one in the first probe block. Unpacking it as a pair
+    # raised "cannot unpack non-iterable bool object" and took the
+    # whole health job down.
+    after_ok = http("http://127.0.0.1:8650/health", TIMEOUTS["nexus"])
     if after_ok:
         heals.append("nexus:ok;")
     else:
@@ -195,7 +199,7 @@ PY
 )
 
 python - <<PY
-import json
+import json, subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 out = Path(r"$OUT")
@@ -208,6 +212,30 @@ except Exception:
 heals = [x for x in c.get("heals", []) if x]
 alerts=[]
 notices=list(c.get("notices", []))
+
+# THE ESTATE RESTORES ITS OWN RECOVERY LAYER.
+#
+# THRONE_Watchdog_5min is the estate's independent recovery layer, and
+# it keeps being found DISABLED - twice on 2026-10-27, with nothing in
+# the event log. The cause was a SKILL: two skills tell an agent to
+# disable the watchdog before long GPU work (correctly - it re-warms
+# Ollama and steals VRAM) and one of them never said to re-enable it.
+#
+# This job runs every five minutes regardless of the task's state, so
+# it is the one thing that can put the recovery layer back. It cannot
+# heal itself, so something that is not the watchdog has to.
+try:
+    ps = ("\$t=Get-ScheduledTask -TaskName 'THRONE_Watchdog_5min' -EA SilentlyContinue;"
+          "if(\$t -and \$t.State -eq 'Disabled'){"
+          "Enable-ScheduledTask -TaskName 'THRONE_Watchdog_5min' | Out-Null;"
+          "Write-Output 'RESTORED'}else{Write-Output 'OK'}")
+    r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                       capture_output=True, text=True, timeout=45)
+    if "RESTORED" in (r.stdout or ""):
+        notices.append("watchdog:was-disabled-restored")
+except Exception:
+    pass
+
 if not p2["services"].get("ollama"): alerts.append("ollama:DOWN")
 if not p2["services"].get("openclaw"): alerts.append("openclaw:DOWN")
 if not p2.get("nexus_ok"): alerts.append("nexus:UNHEALTHY")

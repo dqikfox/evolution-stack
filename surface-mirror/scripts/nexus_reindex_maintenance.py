@@ -116,8 +116,13 @@ def main() -> int:
     stop_service()
     rc = 1
     try:
-        log("rebuild: running tools/reindex_vectors.py (resumable)")
-        rc, out = run([str(NEXUS_VENV), "-u", "tools/reindex_vectors.py"], timeout=60 * 90)
+        log("rebuild: running tools/reindex_vectors.py (FRESH - the index is rebuilt from zero)")
+        # --fresh drops the collection and rebuilds it. That is the
+        # correct mode for the overnight window: the chunking policy
+        # changed (a per-note chunk cap), so an incremental run would
+        # skip the notes it thinks are already indexed and keep a
+        # mixture of two different chunking regimes.
+        rc, out = run([str(NEXUS_VENV), "-u", "tools/reindex_vectors.py", "--fresh"], timeout=60 * 150)
         for line in out.strip().splitlines()[-25:]:
             log(f"  {line}")
         log(f"rebuild: rc={rc}")
