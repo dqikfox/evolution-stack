@@ -46,30 +46,60 @@ START_BUDGET_S = 120
 NEXUS_PY = Path(r"C:\Users\KING\.cache\nexus-venv\Scripts\python.exe")
 COVERAGE_TOOL = ROOT / "tools" / "index_coverage.py"
 COVERAGE_URL = "http://127.0.0.1:8650/api/index/coverage"
+COVERAGE_FILE = ROOT / "data" / "index_coverage.json"
 
 
-def index_coverage() -> dict | None:
-    """Ask the running service for the coverage of its vector index.
+def measure_coverage() -> dict | None:
+    """Measure the vector index with the service down, and read the result.
 
-    The coverage is measured INSIDE the server, with the Chroma
-    connection the server already owns. A tool that measures the index
-    from outside has to open the same Chroma SQLite file a second
-    time, and the service has been wedged by exactly that contention
-    before - the server holds data/chroma/chroma.sqlite3 open for its
-    whole lifetime, and a second process touching it is the hazard the
-    estate's own lessons record.
+    The tool is the project's own (nexus-core/tools/index_coverage.py).
+    It opens the Chroma file, computes the coverage, writes the result
+    to data/index_coverage.json atomically, and exits. It MUST run to
+    completion: a measurement process killed mid-run leaves its handle
+    on the Chroma file, and the service then reports chroma "busy" for
+    as long as that stray process lives.
 
-    nexus-core/tools/index_coverage.py is the offline equivalent, for
-    when the service is deliberately down.
+    Returns None when the measurement could not be made.
+    """
+    if not COVERAGE_TOOL.exists() or not NEXUS_PY.exists():
+        return None
+    try:
+        res = subprocess.run(
+            [str(NEXUS_PY), str(COVERAGE_TOOL)],
+            capture_output=True, text=True, timeout=600, cwd=str(ROOT),
+        )
+    except Exception:
+        return None
+    if res.returncode == 2:
+        # The tool refused - the service was still listening, so a
+        # second Chroma client would have risked the crash this estate
+        # has already seen 161 times.
+        print("  the tool refused: %s" % ((res.stdout or res.stderr or "").strip()[:200]))
+        return None
+    if res.returncode not in (0, 1):
+        return None
+    return read_coverage()
 
-    Returns None when the service cannot answer.
+
+def read_coverage() -> dict | None:
+    """Read the last measured coverage, preferring the service's own view.
+
+    The service serves the measured file at /api/index/coverage. It
+    never computes anything: it opens no Chroma client, so asking it
+    cannot contend with the service it is describing. The file is the
+    fallback, for when the service is not answering.
     """
     try:
         import urllib.request
-        with urllib.request.urlopen(COVERAGE_URL, timeout=120) as resp:
-            if resp.status != 200:
-                return None
-            return json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(COVERAGE_URL, timeout=30) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("measured"):
+                    return data
+    except Exception:
+        pass
+    try:
+        return json.loads(Path(COVERAGE_FILE).read_text(encoding="utf-8"))
     except Exception:
         return None
 
@@ -265,10 +295,52 @@ def main() -> int:
     check(listener_pid() is None, "port is free after the stop")
     check(not supervisor_roots(), "no supervisor survives the stop")
 
+    print("=== MEASURE THE INDEX WHILE THE SERVICE IS DOWN ===")
+    # The measurement opens the Chroma file, and the server holds that
+    # file open for its whole lifetime. Measuring against a live server
+    # is a contention hazard - and a measurement process that is killed
+    # mid-run leaves its handle behind, which leaves the service
+    # reporting chroma "busy" long after the measurement is over. It
+    # was observed doing exactly that on 2026-10-28.
+    #
+    # So the index is measured HERE, in the window where the service is
+    # down and the file has no other owner. Nothing else can write the
+    # index while the server is down - the reindex tool is the only
+    # writer and it refuses to run against a live server - so a
+    # measurement taken now is still true after the restart.
+    coverage = measure_coverage()
+    if coverage is None:
+        check(False, "the index could be measured")
+    else:
+        check(coverage.get("notes_with_missing_chunks") == 0
+              and coverage.get("notes_fully_covered") == coverage.get("notes_in_db"),
+              "the index is complete "
+              f"({coverage.get('notes_fully_covered')}/{coverage.get('notes_in_db')} notes covered, "
+              f"{coverage.get('chunk_ids_present')}/{coverage.get('expected_chunk_ids')} chunk ids present)")
+
     print("=== START: the one canonical launcher ===")
     t0 = time.time()
-    subprocess.run(["cmd", "/c", "start", "", "/b", str(LAUNCHER)],
-                   capture_output=True, text=True, timeout=60)
+    # Do NOT capture the launcher's output.
+    #
+    # `cmd /c start /b` spawns the launcher in this console, and the
+    # launcher spawns the supervisor, which is DETACHED but still holds
+    # the inherited stdout pipe. With capture_output=True, communicate()
+    # waits for every writer on that pipe to close it - so the call
+    # blocks until the supervisor exits, which is never. It worked
+    # while the launcher happened to return quickly and broke when it
+    # did not: the same call raised TimeoutExpired after 60 seconds,
+    # with the service actually up and healthy.
+    #
+    # The launcher is a STARTER, not a service. It is fired and
+    # forgotten, and the health poll below is the proof.
+    try:
+        subprocess.Popen(
+            ["cmd", "/c", "start", "", "/b", str(LAUNCHER)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, close_fds=True,
+        )
+    except Exception as exc:
+        check(False, "the launcher could be started (%s)" % exc)
     deadline = time.time() + START_BUDGET_S
     up = False
     while time.time() < deadline:
@@ -342,14 +414,17 @@ def main() -> int:
         # failure. The invariant that actually answers "did the index
         # survive the restart" is COVERAGE: every note must have all of
         # its expected chunk ids present in the collection.
-        cov = index_coverage()
+        #
+        # The measurement was taken in the stop window, with the service
+        # down, so nothing could have written the index since.
+        cov = read_coverage()
         if cov is None:
             check(False, "the index coverage tool ran")
         else:
             # The health payload's chroma count is informational and is
             # occasionally absent in the moments right after a restart,
             # when the component is still warming. It is never the
-            # assertion: coverage is computed from the collection's own
+            # assertion: coverage is measured from the collection's own
             # ids, so it does not depend on what /health chooses to
             # report.
             reported = ("health reports %s vectors" % vectors) if vectors else \

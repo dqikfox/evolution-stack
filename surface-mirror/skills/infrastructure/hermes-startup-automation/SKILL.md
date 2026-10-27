@@ -540,6 +540,58 @@ hermes config set file.file_read_max_chars 100000
   HNSW segment files, not in SQLite, so `count()` can report every row while
   the index answers every query with garbage. Only self-retrieval proves an
   index works.
+- **A second Chroma client CRASHES THE SERVER, not just the other tool.**
+  This is the sharp edge of the rule above, and it was learned the
+  expensive way: 161 child crashes with 0xC0000005, 338 server
+  generations, the supervisor restarting every 4-33 seconds. The Windows
+  event log names the faulting module - `chromadb_rust_bindings.pyd` - so
+  it was never a supervisor problem. A READER on the server's own
+  Chroma file is enough; it does not have to be a writer.
+- **Measure a live service's index in the window where it is DOWN.**
+  The tempting fix - compute the coverage INSIDE the server, with the
+  connection it already owns - was tried and it was worse: reading 2,804
+  note bodies took 37 seconds, so every call was a 44-second request,
+  and while it ran the service's own `/health` went from 7 milliseconds
+  to 12 seconds with one probe failing outright. A check that degrades
+  the thing it verifies is not a check. The working shape is SEQUENCED:
+  stop the service, run `nexus-core/tools/index_coverage.py` (which
+  writes `data/index_coverage.json` atomically), start the service, then
+  read the result. The window where the service is down is also the
+  window where nothing can write the index, so the measurement is still
+  true after the restart. `GET /api/index/coverage` SERVES that file - it
+  opens no Chroma client, computes nothing, and answers in milliseconds;
+  the result carries the time it was measured, so a stale answer is
+  visible rather than misleading. The tool REFUSES to run against a live
+  service (exit 2) because it is a second Chroma client, and that is the
+  thing that has been crashing the server. `--force` overrides.
+- **A lock that is WRITTEN is not a lock.** The supervisor's
+  `_take_lock()` wrote `logs/supervisor.lock` with a plain `write_text`,
+  so two supervisors could both "take" it - the second overwriting the
+  first's record - and both went on to serve the same port, each killing
+  the other's child as an orphan. That was the flapping, and restarting
+  never fixed it because the arbitration was never atomic. Take it with
+  `os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)` so the kernel
+  decides the winner; steal the lock only after showing the holder is
+  DEAD; never take one from a live holder.
+- **A refused process must not write the owner's files.** A supervisor
+  that refused to start used to overwrite the OWNER's
+  `supervisor_status.json` with its own refusal, so the service could be
+  running while its own status file said it had been refused - and the
+  contract's "the running service is undisturbed by the refusal" check
+  failed for a reason nobody could see. A refusal is evidence and
+  belongs in its own file (`supervisor_refusal_<pid>.json`).
+- **A check that reads a pipe it did not create can block forever.** The
+  launcher contract started the service with
+  `subprocess.run(["cmd","/c","start","/b",...], capture_output=True)`,
+  and the detached supervisor inherited the stdout pipe - so
+  `communicate()` waited for every writer on that pipe to close, and the
+  call raised `TimeoutExpired` after 60 seconds with the service
+  actually up and healthy. The launcher is a STARTER, not a service: fire
+  it with `Popen` and `DEVNULL` and prove it with a health poll. The
+  same shape appears with a file handle left behind by a measurement
+  process killed mid-run, which left the service reporting chroma
+  "busy" long after the measurement was over - a killed process leaves
+  its handle on the file.
 
 ## Verification
 
