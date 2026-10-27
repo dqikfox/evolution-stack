@@ -79,6 +79,30 @@ def run(cmd: list[str], timeout: int = 240) -> tuple[int, str]:
         return 1, str(exc)
 
 
+# The secret resolver reports what it did on STDERR: "applied 22
+# secrets", "Skipping 'X': not an op:// secret reference", "1Password is
+# in a rate-limit cooldown". None of that is a FINDING by the tool being
+# checked, but the gate merges stdout and stderr, so those lines land in
+# the middle of the output being parsed - and a parser that does not
+# know they are noise reads them as issues. On 2026-10-27 that failed
+# two checks: the cron doctor and the MCP tool test both reported
+# failures whose only content was the resolver's own bookkeeping.
+#
+# The notices stay in the output - they are useful - but they are
+# stripped before anything is parsed for findings.
+_SECRET_NOISE = re.compile(
+    r"^\s*(1Password|Bitwarden)\s*:"
+    r"|^\s*Secret sources\s*:"
+    r"|not an op:// secret reference",
+    re.IGNORECASE,
+)
+
+
+def strip_secret_noise(out: str) -> str:
+    """Drop the secret resolver's own notices from a tool's output."""
+    return "\n".join(l for l in out.splitlines() if not _SECRET_NOISE.search(l))
+
+
 def powershell(script: str, timeout: int = 60) -> tuple[int, str]:
     return run(["powershell", "-NoProfile", "-Command", script], timeout=timeout)
 
@@ -324,6 +348,7 @@ def check_cron_doctor() -> Check:
     """
     c = Check("cron_doctor", "cron")
     rc, out = run([str(VENV_PY), "-m", "hermes_cli.main", "cron", "doctor"], timeout=180)
+    out = strip_secret_noise(out)
     low = out.lower()
     standing = 0
     count_seen = False
@@ -560,6 +585,7 @@ def check_evolution_recent_success() -> Check:
 def check_mcp_tools() -> Check:
     c = Check("mcp_tools_connected", "ml")
     rc, out = run([str(VENV_PY), "-m", "hermes_cli.main", "mcp", "test", "constrained_ml"], timeout=180)
+    out = strip_secret_noise(out)
     ok = rc == 0 and "Tools discovered: 5" in out
     c.ok = ok
     c.detail = next((l.strip() for l in out.splitlines() if "Tools discovered" in l), out.strip()[:90])
@@ -743,8 +769,8 @@ def check_nexus_healthy() -> Check:
     c = Check("nexus_healthy", "estate")
     if _rebuild_in_progress():
         c.ok = True
-        c.detail = ("maintenance window: a vector index rebuild holds the "
-                    "lock, so NEXUS is intentionally down")
+        c.detail = "maintenance window: a vector index rebuild holds the lock"
+        c.warning = "NEXUS is intentionally down for a rebuild"
         return record(c)
     code, body = 0, None
     for attempt, timeout in ((1, 15), (2, 30), (3, 60)):

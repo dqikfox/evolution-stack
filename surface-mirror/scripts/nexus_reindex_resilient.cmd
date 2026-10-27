@@ -32,9 +32,30 @@ set ERRLOG=%LOG%.err
 
 set MAXPASSES=%1
 if "%MAXPASSES%"=="" set MAXPASSES=8
+REM "resume" as the second argument means: do NOT start with a fresh
+REM pass. The collection already holds work, and a fresh pass would
+REM throw it away to rebuild it identically.
+set FIRSTPASS=fresh
+if "%2"=="resume" set FIRSTPASS=resume
 set PASS=0
+set LOCKFILE=E:\ultron-memory\nexus-core\data\REBUILD.lock
 
 cd /d "%NEXUS_PROJECT%"
+
+REM THE WRAPPER HOLDS THE LOCK FOR THE WHOLE SEQUENCE.
+REM
+REM Each pass releases the lock when it ends, and a twenty-second gap
+REM with no lock is a window in which the five-minute health job starts
+REM NEXUS - onto a half-built index, while the brain is down for a
+REM reason nothing reports. The next pass then finds the port taken.
+REM
+REM So the wrapper takes the lock once, before the first pass, and every
+REM pass runs with --lock-held: the tool neither takes it nor releases
+REM it. The lock comes off only when the whole sequence is done, which
+REM is the one moment the server is genuinely allowed to come back.
+if not exist "%LOCKFILE%" (
+    echo vector index rebuild started %DATE% %TIME% (wrapper, pid %RANDOM%) > "%LOCKFILE%"
+)
 
 REM Control flow is goto-based on purpose: a parenthesised block ends at
 REM the first unbalanced ")", and cmd reports that as "was unexpected at
@@ -44,15 +65,15 @@ if %PASS% geq %MAXPASSES% goto :exhausted
 set /a PASS+=1
 echo ==== pass %PASS% of %MAXPASSES% started %DATE% %TIME% ==== >> "%LOG%"
 
-if %PASS%==1 goto :fresh
+if %PASS%==1 if "%FIRSTPASS%"=="fresh" goto :fresh
 goto :resume
 
 :fresh
-"%NEXUS_VENV%" -u tools\reindex_vectors.py --fresh >> "%LOG%" 2>> "%ERRLOG%"
+"%NEXUS_VENV%" -u tools\reindex_vectors.py --fresh --yes-i-mean-it --lock-held >> "%LOG%" 2>> "%ERRLOG%"
 goto :after
 
 :resume
-"%NEXUS_VENV%" -u tools\reindex_vectors.py >> "%LOG%" 2>> "%ERRLOG%"
+"%NEXUS_VENV%" -u tools\reindex_vectors.py --lock-held >> "%LOG%" 2>> "%ERRLOG%"
 goto :after
 
 :after
@@ -69,8 +90,11 @@ goto :loop
 
 :complete
 echo ==== rebuild COMPLETED on pass %PASS% at %DATE% %TIME% ==== >> "%LOG%"
+del /q "%LOCKFILE%" >nul 2>&1
 exit /b 0
 
 :exhausted
 echo ==== rebuild did not complete within %MAXPASSES% passes ==== >> "%LOG%"
+REM The lock STAYS on. The index is not finished, so the server must
+REM not come back onto it.
 exit /b 1

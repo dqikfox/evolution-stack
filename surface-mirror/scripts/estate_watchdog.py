@@ -115,6 +115,59 @@ def load_registry() -> list[dict]:
     return [s for s in data.get("services", []) if s.get("status") != "retired"]
 
 
+# A vector index rebuild takes NEXUS offline on purpose: the rebuild
+# writes chroma.sqlite3 and the server holds it open, and the two
+# deadlock against each other. The rebuild leaves a lock file behind
+# while it runs.
+#
+# The watchdog must honour that lock. Without it, the watchdog probes a
+# service that is down ON PURPOSE, decides it is dead, and restarts it -
+# and the restart either loses the race to the rebuild or holds the
+# database lock the rebuild needs. On 2026-10-27 that is what killed
+# three consecutive rebuilds, each one about forty minutes in.
+#
+# The lock is a plain file. Its presence means "a rebuild is running",
+# and the correct action is to do nothing and say so.
+REBUILD_LOCKS = [
+    Path(r"E:\ultron-memory\nexus-core\data\REBUILD.lock"),
+]
+
+
+def rebuild_in_progress() -> Path | None:
+    """The lock file of a running rebuild, if there is one."""
+    for lock in REBUILD_LOCKS:
+        try:
+            if lock.exists():
+                return lock
+        except OSError:
+            continue
+    return None
+
+
+# The services whose data the NEXUS vector rebuild owns. Only these are
+# held down by the rebuild lock; everything else in the estate is
+# healable while the lock is held.
+_REBUILD_LOCK_PORTS = {8650}
+
+
+def _service_uses_rebuild_lock(service: dict) -> bool:
+    """True when this service is the one the rebuild lock protects.
+
+    The lock exists because NEXUS's vector index is being rebuilt and
+    the NEXUS server would deadlock against the writer. It says
+    NOTHING about any other service. Treating it as a blanket excuse
+    left openclaw unhealed for the length of a rebuild.
+    """
+    try:
+        port = int(service.get("port") or 0)
+    except (TypeError, ValueError):
+        port = 0
+    name = str(service.get("name") or service.get("id") or "").lower()
+    if port in _REBUILD_LOCK_PORTS:
+        return True
+    return name.startswith("nexus")
+
+
 def heal(service: dict) -> bool:
     """Restart through the documented launcher. Never improvise a start path."""
     start = service.get("start") or {}
@@ -125,6 +178,61 @@ def heal(service: dict) -> bool:
         return False
     command = f"{path} {args}".strip()
     log(f"  {service.get('name')}: restarting via {command}")
+    result = _launch(command)
+    if result is None:
+        log(f"  {service.get('name')}: the launcher could not be started")
+        return False
+    deadline = time.time() + HEAL_WAIT
+    while time.time() < deadline:
+        if healthy(service):
+            log(f"  {service.get('name')}: recovered on :{service.get('port')}")
+            return True
+        time.sleep(2.0)
+    log(f"  {service.get('name')}: still down after the heal "
+        f"(launcher rc={result})")
+    return False
+
+
+def _launch(command: str):
+    """Run a start command without letting it hold the watchdog hostage.
+
+    Two kinds of launcher live in this estate and they need different
+    treatment.
+
+    A SCRIPT (`cmd`, `.bat`, `.cmd`) returns when it is done, so it is
+    run and waited for - but with stdin closed, because several of the
+    house launchers end in "pause" and an inherited console makes that
+    wait for a keypress that never comes.
+
+    A GUI APPLICATION (`.exe` that does not exit) never returns, and
+    `cmd /c` waits for it anyway. OpenClaw's tray app is one, and on
+    2026-10-27 the watchdog sat in that call for its entire launcher
+    budget - 360 seconds - before it even started waiting for the
+    port. The whole watchdog run took seven minutes, which is longer
+    than the five-minute cycle it is supposed to fit inside, so the
+    recovery layer was effectively not running.
+
+    A GUI app is launched DETACHED instead: no console, no inherited
+    handles, no wait. The port poll afterwards is what decides whether
+    the service came back, and the launcher's own exit code is not
+    evidence of anything.
+    """
+    suffix = Path(command.split()[0].strip('"')).suffix.lower()
+    if suffix in (".exe",):
+        flags = 0
+        for name in ("DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP",
+                     "CREATE_NO_WINDOW"):
+            flags |= getattr(subprocess, name, 0)
+        try:
+            subprocess.Popen(
+                command, shell=False, stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                close_fds=True, creationflags=flags,
+            )
+            return "detached"
+        except Exception as exc:
+            log(f"  launcher failed to start: {exc}")
+            return None
     try:
         result = subprocess.run(["cmd.exe", "/c", command], capture_output=True,
                                 text=True, timeout=LAUNCHER_BUDGET,
@@ -138,20 +246,14 @@ def heal(service: dict) -> bool:
                                 # actually worked. With stdin closed, "pause"
                                 # returns at once.
                                 stdin=subprocess.DEVNULL)
+        return result.returncode
+    except subprocess.TimeoutExpired:
+        log(f"  the launcher did not return within {LAUNCHER_BUDGET}s - "
+            f"carrying on and waiting for the port instead")
+        return "timeout"
     except Exception as exc:
-        log(f"  {service.get('name')}: the launcher failed to run: {exc}")
-        return False
-    deadline = time.time() + HEAL_WAIT
-    while time.time() < deadline:
-        if healthy(service):
-            log(f"  {service.get('name')}: recovered on :{service.get('port')}")
-            return True
-        time.sleep(2.0)
-    log(f"  {service.get('name')}: still down after the heal "
-        f"(launcher rc={result.returncode})")
-    for line in (result.stdout or "").strip().splitlines()[-4:]:
-        log(f"    {line}")
-    return False
+        log(f"  the launcher failed to run: {exc}")
+        return None
 
 
 def check_peers() -> tuple[list, list]:
@@ -248,6 +350,28 @@ def main() -> int:
         # service that answers the second probe was never down.
         log(f"  {name} (:{service.get('port')}) did not answer the first probe "
             f"- confirming before any heal")
+
+        # A rebuild in progress is a service that is down ON PURPOSE. The
+        # rebuild owns the Chroma file and the notes database; starting
+        # the server now deadlocks the two, and the rebuild is the half
+        # that has to win. Do not heal, and do not count it as failed.
+        #
+        # But only for the service the rebuild actually affects. The
+        # rebuild lock belongs to NEXUS: it is NEXUS's vector index that
+        # is being rebuilt, and NEXUS is the service that would
+        # deadlock against it. Every OTHER service in the estate is
+        # perfectly healable while the lock is held - and treating the
+        # lock as a blanket excuse meant that on 2026-10-27 the
+        # watchdog cheerfully declined to heal openclaw because NEXUS
+        # was being rebuilt. A maintenance window for one service is
+        # not a maintenance window for the whole estate.
+        lock = rebuild_in_progress()
+        if lock is not None and _service_uses_rebuild_lock(service):
+            log(f"  {name} (:{service.get('port')}) is down because a vector "
+                f"rebuild is running ({lock}). Not healing - the server "
+                f"would deadlock the rebuild.")
+            continue
+
         time.sleep(CONFIRM_DELAY)
         try:
             if healthy(service):
