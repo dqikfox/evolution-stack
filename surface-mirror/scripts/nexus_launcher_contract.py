@@ -41,6 +41,35 @@ PORT = 8650
 # starts at 1s and doubles, so a start can legitimately take a while
 START_BUDGET_S = 120
 
+# The interpreter NEXUS actually runs under. It is NOT the Hermes venv
+# and not nexus-core/.venv - the launcher pins this one.
+NEXUS_PY = Path(r"C:\Users\KING\.cache\nexus-venv\Scripts\python.exe")
+COVERAGE_TOOL = ROOT / "tools" / "index_coverage.py"
+
+
+def index_coverage() -> dict | None:
+    """Run the index coverage tool and return its report.
+
+    The coverage tool lives with the project it measures, and the
+    contract asks it rather than reimplementing the chunk-id maths.
+    Returns None when the tool cannot run at all.
+    """
+    if not COVERAGE_TOOL.exists() or not NEXUS_PY.exists():
+        return None
+    try:
+        res = subprocess.run(
+            [str(NEXUS_PY), str(COVERAGE_TOOL), "--json"],
+            capture_output=True, text=True, timeout=300, cwd=str(ROOT),
+        )
+    except Exception:
+        return None
+    if res.returncode not in (0, 1):
+        return None
+    try:
+        return json.loads(res.stdout)
+    except Exception:
+        return None
+
 
 def supervisor_roots() -> list[dict]:
     """The top of each supervisor chain.
@@ -302,8 +331,27 @@ def main() -> int:
         notes = h.get("components", {}).get("database", {}).get("notes_count")
         vectors = h.get("components", {}).get("chroma", {}).get("vectors")
         check(h.get("ok") is True, "health is ok")
-        check(bool(notes) and notes == vectors,
-              f"the index survived the restart ({notes} notes, {vectors} vectors)")
+        # "notes == vectors" CANNOT hold on this index. The indexer
+        # CHUNKS every note and upserts each chunk as its own vector
+        # (chunk_note -> _chunk_ids), so one note legitimately owns
+        # several vectors - 2,804 notes became 20,561 vectors here.
+        # Asserting equality there guaranteed a permanent, meaningless
+        # failure. The invariant that actually answers "did the index
+        # survive the restart" is COVERAGE: every note must have all of
+        # its expected chunk ids present in the collection.
+        cov = index_coverage()
+        if cov is None:
+            check(False, "the index coverage tool ran")
+        else:
+            check(
+                cov.get("notes_with_missing_chunks") == 0
+                and cov.get("notes_fully_covered") == cov.get("notes_in_db")
+                and (notes is None or cov.get("notes_in_db") == notes),
+                "the index survived the restart "
+                f"({cov.get('notes_fully_covered')}/{cov.get('notes_in_db')} notes covered, "
+                f"{cov.get('chunk_ids_present')}/{cov.get('expected_chunk_ids')} chunk ids present, "
+                f"health reports {vectors} vectors)",
+            )
     else:
         check(False, "health endpoint answered")
     check(len(search_results()) > 0, "search still answers end to end")
