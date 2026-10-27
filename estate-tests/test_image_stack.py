@@ -110,8 +110,9 @@ def main() -> int:
 
     was_up = comfyui._comfy_is_up()
     record("comfyui_pre_state", True, f"already up: {was_up}")
+    body_rc = 1
     try:
-        return _run_body(was_up)
+        body_rc = _run_body(was_up)
     finally:
         # ALWAYS. Whatever happened above - success, a failed generation,
         # an exception - ComfyUI goes back the way it was found.
@@ -122,9 +123,18 @@ def main() -> int:
         else:
             record("comfyui_left_running_as_found", True,
                    f"was_up={was_up} - left as found")
+        # The report is printed after the cleanup, so the count includes
+        # the cleanup checks and the run always ends with a summary.
+        passed = sum(1 for r in RESULTS if r["ok"])
+        print("=" * 70)
+        print(f"{passed}/{len(RESULTS)} checks passed")
+        if args.json:
+            print(json.dumps(RESULTS, indent=2))
+    return 0 if (body_rc == 0 and passed == len(RESULTS)) else 1
 
 
 def _run_body(was_up: bool) -> int:
+    import comfyui  # the tested helper next to the MCP server
 
     checkpoints = comfyui._image_checkpoints()
     record("image_checkpoint_found", bool(checkpoints),
@@ -182,12 +192,9 @@ def _run_body(was_up: bool) -> int:
 
     # ComfyUI is stopped again only when this test started it - but that
     # happens in main()'s finally, on every exit path, not only here.
-    passed = sum(1 for r in RESULTS if r["ok"])
-    print("=" * 70)
-    print(f"{passed}/{len(RESULTS)} checks passed")
-    if args.json:
-        print(json.dumps(RESULTS, indent=2))
-    return 0 if passed == len(RESULTS) else 1
+    # The pass count is computed in main(), AFTER that finally, so the
+    # cleanup checks are counted too.
+    return 0
 
 
 def _comfy_state() -> dict:
