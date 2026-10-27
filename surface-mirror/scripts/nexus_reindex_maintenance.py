@@ -116,13 +116,21 @@ def main() -> int:
     stop_service()
     rc = 1
     try:
-        log("rebuild: running tools/reindex_vectors.py (FRESH - the index is rebuilt from zero)")
-        # --fresh drops the collection and rebuilds it. That is the
-        # correct mode for the overnight window: the chunking policy
-        # changed (a per-note chunk cap), so an incremental run would
-        # skip the notes it thinks are already indexed and keep a
-        # mixture of two different chunking regimes.
-        rc, out = run([str(NEXUS_VENV), "-u", "tools/reindex_vectors.py", "--fresh"], timeout=60 * 150)
+        log("rebuild: running the RESILIENT rebuild wrapper (fresh, resumable)")
+        # The wrapper, not the tool directly, because a rebuild on this
+        # host is an event rather than an exception - it was killed
+        # three times on 2026-10-27. The wrapper takes the lock ONCE
+        # and holds it across every pass, so the five-minute health
+        # job cannot start the server onto a half-built index, and it
+        # RESUMES rather than starting over: the first pass is fresh
+        # (the chunking policy changed, so an incremental run would
+        # leave a mixture of two chunking regimes) and every pass after
+        # that keeps the work it completed.
+        #
+        # --fresh is spelled twice on purpose: dropping the index is
+        # destructive and has to be asked for explicitly.
+        wrapper = HERMES / "scripts" / "nexus_reindex_resilient.cmd"
+        rc, out = run(["cmd", "/c", str(wrapper), "12", "fresh"], timeout=60 * 150)
         for line in out.strip().splitlines()[-25:]:
             log(f"  {line}")
         log(f"rebuild: rc={rc}")
