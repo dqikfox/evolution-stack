@@ -236,11 +236,25 @@ try:
 except Exception:
     pass
 
+notices += heals
 if not p2["services"].get("ollama"): alerts.append("ollama:DOWN")
 if not p2["services"].get("openclaw"): alerts.append("openclaw:DOWN")
-if not p2.get("nexus_ok"): alerts.append("nexus:UNHEALTHY")
+# A service that is down because a rebuild holds the lock is down ON
+# PURPOSE. That is a planned outage, not a fault, and it must not make
+# the job fail: a job that fails every five minutes for an hour
+# because the brain is being rebuilt trains everyone to ignore it, and
+# the next real failure gets ignored with it.
+#
+# The lock is scoped to NEXUS, exactly as it is in the watchdog. A
+# rebuild of NEXUS's vector index says nothing about the other
+# services, so they are still judged on their own.
+_nexus_planned = any(
+    n.startswith("nexus:refused-rebuild") or n.startswith("nexus:down-maintenance")
+    for n in notices
+)
+if not p2.get("nexus_ok") and not _nexus_planned:
+    alerts.append("nexus:UNHEALTHY")
 if not p2.get("tess_ok"): notices.append("tesseract:UNHEALTHY")
-notices += heals
 state={
   "ts": datetime.now(timezone.utc).isoformat(),
   "status": "ALERT" if alerts else ("DEGRADED" if notices else "OK"),
