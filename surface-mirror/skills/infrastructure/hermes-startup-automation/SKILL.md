@@ -514,6 +514,33 @@ hermes config set file.file_read_max_chars 100000
   conditional-sounding hint unconditionally - an unconditional
   "if you get a c10.dll error" line gets logged as the diagnosis.
 
+- **A check that CANNOT pass is a check that teaches you to ignore it.** Three
+  verifications in this estate had been failing for months against systems that
+  were entirely healthy, and all three failed the same way: they compared the
+  wrong two things. The launcher contract asserted `notes == vectors` on a
+  CHUNKED index (2,804 notes legitimately become 20,561 vectors, one vector
+  per chunk). The rebuild compared a slice against the whole corpus, so its
+  fallback re-upserted every note and its "did this pass finish" test was only
+  true in a state the function is never reached in. The mirror parity check
+  read a file as TEXT and compared it to a row, a str, so a CRLF file could
+  never equal an LF row - 699 of 2,804 files reported as drifted when not one
+  character of text differed. When a verification has been red for months while
+  everything else is green, THE CHECK IS THE SUSPECT, not the system. Compare
+  the two things that are actually supposed to agree, in the representation
+  they are actually stored in, and treat a line ending as a non-content
+  difference. Prove a check can still FAIL before you trust it to clear
+  anything.
+- **A chunked index is verified by COVERAGE, not by a count.** The only
+  question is whether every note has all of its expected chunk ids present.
+  `nexus-core/tools/index_coverage.py` computes the expected chunk ids for
+  every note (`chunk_note` -> `_chunk_ids`) and asserts they are all in the
+  collection, fetching the ids DIRECTLY rather than trusting `count()` - the
+  rebuild had already learned that `count()` disagrees with the id set the
+  collection actually holds. A separate trap: the vector BLOBS live in the
+  HNSW segment files, not in SQLite, so `count()` can report every row while
+  the index answers every query with garbage. Only self-retrieval proves an
+  index works.
+
 ## Verification
 
 A healthy estate passes all of these:
@@ -529,6 +556,11 @@ A healthy estate passes all of these:
   claimed as autonomous
 - `hermes mcp test <server>` connects and lists the expected tool count
 - the estate watchdog exits 0 with "estate is healthy"
+- the NEXUS launcher contract exits 0 with "LAUNCHER CONTRACT: ALL PASSED",
+  and the index line reads "N/ N notes covered, M/ M chunk ids present"
+- `nexus-core/tools/verify_corpus.py` prints "VERIFY: PASS", with "distinct
+  notes covered by vectors" equal to the note count and "rows containing a
+  known live value" at 0
 
 ## References
 
